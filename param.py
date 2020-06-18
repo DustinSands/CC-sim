@@ -23,31 +23,51 @@ q.HCD = q.CompoundUnit('e6c/ml')
 # cells = q.unitquantity.IrreducibleUnit('cell', symbol = 'cell')
 # cells = q.UnitQuantity('e5 cells', cells*1e5, symbol='e5c')
 
+tracked_components = ['CO2', 'O2', 'Glucose', 'H2CO3']
+gas_components = ['CO2', 'O2', 'air']
 
 # ERROR CONSTANTS
 instrumentation={
   'BGA':{
     # Slope
-    'O2_random_error_sigma' : 0.003,
-    'O2_systematic_error_sigma' : 0.005,    # Low confidence
+    'O2_random_error_CV' : 0.003,
+    'O2_systematic_error_CV' : 0.005,    # Low confidence
+    'CO2_random_error_CV' : 0.005,       # Low confidence
+    'CO2_systematic_error_CV' : 0.01,    # Low confidence
     # Net
     'pH_random_error_sigma' : 0.005,
     'pH_systematic_error_sigma' : 0.002, # Low confidence
     },
   'Probe':{
     'O2':{  
-      'drift_sigma' : 0.1,
-      't98' : np.timedelta64(60, 's'),
-      'random_sigma' : 0.001,
+      'drift_CV' : 0.1,  #s
+      't98' : np.timedelta64(60, 's'), #s
+      'random_CV' : 0.001,     # relative
       },
     'pH':{
-      'drift_sigma' : 1.73,
+      'drift_sigma' : 1.73, #s
+      't98' : np.timedelta64(30, 's'), #s
+      'random_sigma' : 0.001,     # 'net'
+      },
+    'temperature':{  
       't98' : np.timedelta64(30, 's'),
-      'random_sigma' : 0.001,
+      'random_sigma' : 0.01,      # net
+      'systematic_sigma': 0.05    # net
       },
     },
   'Cell_Counter':{
-    'random_error_sigma':0.05,
-    'systematic_error_sigma':0.03,
+    'density_random_error_CV':0.05,      # s
+    'density_systematic_error_CV':0.03,  # s
+    'viability_random_error_sigma':1.5, #net, s
+    'viability_systematic_error_sigma':2, #net, s
+    'size_random_error_sigma':0.1,
+    'size_systematic_error_sigma':0.2,
     }
+  }
+
+# Constants
+kla_ratio = {
+  'O2':1,
+  'CO2':0.95,
+  'CO':1.03,
   }

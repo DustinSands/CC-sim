@@ -23,7 +23,7 @@ class feed_strategy:
   
   addition_rate is the desired setpoint of addition of feed media
   """
-  def __init__(self, initial_volume, sample_interval, cpp, set_point, time, target_seeding_density):
+  def __init__(self, control_variable, initial_volume, sample_interval, cpp, set_point, time, target_seeding_density):
     self.initial_volume = initial_volume
     self.seeding_density = target_seeding_density
     self.seed_time = time
@@ -31,12 +31,13 @@ class feed_strategy:
     self.interval = sample_interval
     self.sp = set_point
     self.cpp = cpp
+    self.control = control_variable
   
-  def step(self, obs):
+  def step(self, assays, actuation):
     #Check if there is a new reading for the control parameter
-    if self.cpp in obs:
-      self.update_control(obs)
-    return self.addition_rate
+    if self.cpp in assays:
+      self.update_control(assays)
+    return {self.control: self.addition_rate}
       
   
 class fed_batch(feed_strategy):
@@ -51,8 +52,8 @@ class fed_batch(feed_strategy):
   cpp must be a concentration.
   
   """
-  def __init__(self, **kwargs):
-    super().__init__(**kwargs)
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
     self.addition_rate = 0
     self.last_time = self.seed_time
     

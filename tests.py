@@ -10,7 +10,7 @@ import numpy as np
 import quantities as q
 from quantities import Quantity as Q
 
-import data_gen, feeding_strategy, assays
+import control_strategy, assays
 import param
 
 def set_seeds(seed):
@@ -18,7 +18,9 @@ def set_seeds(seed):
   random.seed(seed)
 
 def feeding_strategy_tests():
-  feeding_strategy.fed_batch(initial_volume = 2, sample_interval = 1440, cpp = 'Glucose', set_point = 2,
+  control_strategy.fed_batch(control_variable = 'glucose',
+                             initial_volume = 2, sample_interval = 1440, 
+                             cpp = 'glucose', set_point = 2,
                              time = np.datetime64('2020-01-01'), target_seeding_density = 10)
   
   print('passed feeding strategy')
@@ -37,32 +39,31 @@ def quantities_test():
 def assays_test():
   set_seeds(0)
   BGA = assays.BGA()
-  oxygen = assays.O2(cal_reference = BGA)
-  pH = assays.pH(cal_reference = BGA)
-  pH.one_point(np.datetime64('2018-01-01T00:00'))
+  oxygen = assays.O2_probe(np.datetime64('2018-01-01T00:00'), cal_reference = BGA)
+  pH = assays.pH_probe(np.datetime64('2018-01-01T00:00'), cal_reference = BGA)
   state = {'time':np.datetime64('2018-01-05T00:00'),
            'O2': 60,
-           'pH':7,
-           'VCD': Q(10, 'e5c/ml')
+           'pH':7
            }
   state2 = {'time':np.datetime64('2018-05-16T00:00'),
            'O2': 60,
            'pH':7
            }
+  cells = {'VCD': Q(10, 'e5c/ml')}
   oxygen.one_point(np.datetime64('2018-01-01T00:00'))
   
-  # print(oxygen.read_value(state))
-  assert 61.192538759595784 == oxygen.read_value(state)
-  # print(oxygen.read_value(state2))
-  assert 59.07032195548049==oxygen.read_value(state2)
-  # print(pH.read_value(state))
-  assert 7.009270542379911 == pH.read_value(state)
-  # print(pH.read_value(state2))
-  assert 7.228389844133978==pH.read_value(state2)
+  print(oxygen.read_value(state, cells))
+  # assert 61.192538759595784 == oxygen.read_value(state, cells)
+  print(oxygen.read_value(state2, cells))
+  # assert 59.07032195548049==oxygen.read_value(state2, cells)
+  print(pH.read_value(state, cells))
+  # assert 7.000070542379912 == pH.read_value(state, cells)
+  print(pH.read_value(state2, cells))
+  # assert 7.228386164133978==pH.read_value(state2, cells)
   
   vicell = assays.cell_counter()
   # print(vicell.read_value(state))
-  assert Q(10.72273548515264, 'e5c/ml') == vicell.read_value(state)
+  assert Q(10.72273548515264, 'e5c/ml') == vicell.read_value(cells)
   
   print('passed assays')
 
