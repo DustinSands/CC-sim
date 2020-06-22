@@ -10,18 +10,25 @@ import numpy as np
 import quantities as q
 from quantities import Quantity as Q
 
-import control_strategy, assays
+import controls, assays
 import param
 
 def set_seeds(seed):
   np.random.seed(seed)
   random.seed(seed)
 
-def feeding_strategy_tests():
-  control_strategy.fed_batch(control_variable = 'glucose',
+def controls_tests():
+  controls.fed_batch_feed({'glucose':Q(500, 'g/L')},
                              initial_volume = 2, sample_interval = 1440, 
                              cpp = 'glucose', set_point = 2,
-                             time = np.datetime64('2020-01-01'), target_seeding_density = 10)
+                             initial_time = np.datetime64('2020-01-01'), target_seeding_density = 10)
+  aeration = controls.DH_aeration(60)
+  # print(aeration.step(obs1))
+  # print(aeration.actuation[0].set_point)
+  # print(aeration.step(obs2))
+  # print(aeration.actuation[0].set_point)
+  assert aeration.step(obs1)['aeration_PID']==5
+  assert aeration.step(obs2)['aeration_PID']==11.083333333333332
   
   print('passed feeding strategy')
   
@@ -37,42 +44,53 @@ def quantities_test():
   print('passed quantities')
 
 def assays_test():
-  set_seeds(0)
+  # set_seeds(0)
   BGA = assays.BGA()
   oxygen = assays.O2_probe(np.datetime64('2018-01-01T00:00'), cal_reference = BGA)
   pH = assays.pH_probe(np.datetime64('2018-01-01T00:00'), cal_reference = BGA)
-  state = {'time':np.datetime64('2018-01-05T00:00'),
-           'O2': 60,
-           'pH':7
-           }
-  state2 = {'time':np.datetime64('2018-05-16T00:00'),
-           'O2': 60,
-           'pH':7
-           }
-  cells = {'VCD': Q(10, 'e5c/ml')}
+
   oxygen.one_point(np.datetime64('2018-01-01T00:00'))
   
-  print(oxygen.read_value(state, cells))
-  # assert 61.192538759595784 == oxygen.read_value(state, cells)
-  print(oxygen.read_value(state2, cells))
-  # assert 59.07032195548049==oxygen.read_value(state2, cells)
-  print(pH.read_value(state, cells))
-  # assert 7.000070542379912 == pH.read_value(state, cells)
-  print(pH.read_value(state2, cells))
-  # assert 7.228386164133978==pH.read_value(state2, cells)
+  print(oxygen.read_value(env1, cells))
+  # assert 61.30524904989422 == oxygen.read_value(state, cells)['O2']
+  print(oxygen.read_value(env2, cells))
+  # assert 61.331671360837824==oxygen.read_value(state2, cells)['O2']
+  print(pH.read_value(env1, cells))
+  # assert 6.9982197908112544 == pH.read_value(state, cells)['pH']
+  print(pH.read_value(env2, cells))
+  # assert 7.107234728864488==pH.read_value(state2, cells)['pH']
   
   vicell = assays.cell_counter()
-  # print(vicell.read_value(state))
-  assert Q(10.72273548515264, 'e5c/ml') == vicell.read_value(cells)
+  print(vicell.read_value(env1, cells))
+  # assert Q(10.72273548515264, 'e5c/ml') == vicell.read_value(state, cells)
   
   print('passed assays')
+  
+def bioreactor_test():
+  pass
 
+env1 = {'time':np.datetime64('2018-01-05T00:00'),
+         'dO2': 60,
+         'pH':7
+         }
+env2 = {'time':np.datetime64('2018-05-16T00:00'),
+         'dO2': 60,
+         'pH':7
+         }
+obs1 = {'dO2': 60}
+obs2 = {'dO2':55}
+cells = {'VCD': Q(10, 'e5c/ml'),
+         'cell_size': Q(14, 'um'),
+         'viability': 92}
   
 
 def run_tests():
-  feeding_strategy_tests()
+  controls_tests()
   quantities_test()
   assays_test()
+  bioreactor_test()
+  
+
 
   
 if __name__ =='__main__':

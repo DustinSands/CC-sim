@@ -1,11 +1,49 @@
 # -*- coding: utf-8 -*-
 """
-Holds all physical actuation equipment.  Takes a setpoint and outputs actual
+Holds all physical actuation equipment.  Takes a setpoint and computes actual
 quantities.
+
+Wrapper gets all quantities added and returns an actuation dictionary of rates.
 """
 import random
 
 from quantities import Quantity as Q
+import param
+
+class mixture:
+  """Holds components in a mixture.  Introduces error in the exact amount of 
+  components in the mixture as well as handles things like changeouts.
+  
+  Changeouts happen whenever empty.  Can be updated later."""
+  p2 = param.actuation['mixtures']
+  def __init__(self, mixture_components, reservoir_size = Q(1, 'L')):
+    """mixture_components:
+      dict of component along with target concentration
+    """
+    self.concentration = {}
+    self.target_concentrations = mixture_components
+    self.size = reservoir_size
+    self.replace_source()
+
+  def dispense(self):
+    output = {}
+    total_liquid = rate*param.q_res
+    self.remaining -= total_liquid
+    if self.remaining < 0:    #Update at some point to happen during offline assays?
+      self.replace_source()
+    for component, concentration in self.concentration:
+      output[component] = concentration*total_liquid
+    output['liquid_volume'] = total_liquid
+    return output
+    
+  def replace_source(self):
+    """Generates new mixture with fresh errors."""
+    for component, concentration in self.target_concentrations.items():
+      error = random.gauss(0, self.p2['component_CV'])
+      self.concentration[component] = concentration*(1+error)
+    self.remaining = self.size
+      
+    
 
 class MFC:
   """Takes setpoint and returns actual amount dispensed.  Includes constant 
@@ -13,42 +51,80 @@ class MFC:
   
   In: Volumetric flowrate
   Out: Volumetric flowrate"""
-  def __init__(self, self_correcting = False, normal_error = 0.005, break_chance = 
-               Q(0.1, '/yr')):
-    self.error = random.gauss(1, normal_error)
+  p = param.actuation['MFC']
+  def __init__(self, component, self_correcting = False, 
+               error_CV = p['systematic_error_CV'], break_chance = 
+               p['break_chance']):
+    """test doc"""
+    self.systematic_error = random.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
-    self.broken_mult
-    
-  def get_amount(self, set_point):
-    # Only called if pump is on.  Constant chance of breaking whenever
-    # the pump is on.
-    if random.random()<float(break_chance*param.resolution):
-      self.broken_mult = 0
-    return self.error * set_point * self.broken_mult
+    self.broken_mult = 1
+    self.set_point = Q(0, 'L/min')
+    self.component = component
 
-class peristaltic:
+  
+  def step(self):
+    if self.set_point != 0:
+      # Only called if pump is on.  Constant chance of breaking whenever
+      # the pump is on.
+      if random.random()<float(break_chance*param.resolution):
+        self.broken_mult = 0
+    addition_rate = self.systematic_error * self.set_point * self.broken_mult
+    return {self.component: addition_rate}
+
+class peristaltic(mixture):
   """Takes the setpoint and returns actual amount dispensed.  Includes error
   in pump calibration (Default: sigma 3%) as well as any self-correcting measures. 
   
   Includes chance to break. (Default: 1/yr)"""
-  def __init__(self, self_correcting = False, normal_error = 0.03, break_chance = 
-               Q(1, '/yr')):
-    self.error = random.gauss(1, normal_error)
-    # 1 = working fine, 0 = broken
-    self.broken_mult
+  p = param.actuation['peristaltic']
+  def __init__(self, mixture_components, 
+               source_size = None, 
+               self_correcting = False, 
+               error_CV = p['systematic_error_CV'], 
+               break_chance = p['break_chance']):
+    """mixture_components is passed to mixture.  Should be dict of target
+    concentrations of the mixture.
     
-  def get_amount(self, set_point):
+    source_size affects how often it is changed out with a new batch (new errors)
+    """
+    super().__init__(mixture_components)
+    self.systematic_error = random.gauss(1, error_CV)
+    # 1 = working fine, 0 = broken
+    self.broken_mult = 1
+    self.set_point = Q(0, 'ml/min')
+    self.source = mixture(mixture_components)
+    
+  def step(self):
     # Only called if pump is on.  Constant chance of breaking whenever
     # the pump is on.
     if random.random()<float(break_chance*param.resolution):
       self.broken_mult = 0
-    return self.error * set_point * self.broken_mult
+    total_liquid = self.error * self.set_point * self.broken_mult
+    return self.dispense(total_liquid)
+    
   
 # class scale:
 #   """A scale.  Assumes you're using it within range.  These things are pretty
 #   reliable and accurate, so no sources of error introduced here."""
 
 class wrapper:
-  
-  def __init__(self, equipment_configuration):
+  def __init__(self, actuation_list):
+    self.actuation_list = actuation_list
+    
+  def step(self):
+    actuation = {}
+    for item in param.tracked_components:
+      actuation[item]=0
+    actuation['liquid_volume']=0
+    
+    for item in self.actuation_list:
+      components_added = item.step()
+      for key, value in components_added.items():
+        actuation[key] += value
+    return actuation
+    # for component in param.tracked_components:
+    #   actuation.update({component:    })
+    #   total +=
+    # {'liquid_volume_rate':total}
     pass    

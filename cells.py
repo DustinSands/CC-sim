@@ -8,6 +8,7 @@ Created on Fri Jun 12 14:14:22 2020
 # cell_size [um]
 # VCD [e5c/ml]
 # viability [%]
+# uptake: {all tracked components}
 
 
 class cell_instance:

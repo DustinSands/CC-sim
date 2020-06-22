@@ -18,21 +18,34 @@ import random
 
 import numpy as np
 
-import actuation, assays, cells, control_strategy, bioreactor, param
+import actuation, assays, cells, controls, bioreactor, param
 
+def create_config(num_experiments):
+  start_time = np.datetime64('2020-01-01')
+  assay_setup = [assays.BGA(), start_time]
+  fed_batch_setup = [{'glucose', Q(500, 'g/L')}, np.timedelta64(24, 'h'), 
+                   'glucose', Q(2, 'g/L'), start_time, Q(1, 'e5c/ml')]
+  aeration_setup = {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
+               'max_O2':Q(0.1, 'L/min')}]
+  control_setup = [controls.fed_batch_feed(*fed_batch_setup),
+                   controls.DH_aeration(**aeration_setup)]
+  
+  br_setup = [start_time]
+  cell_setup = []
 
 def run_experiments(config, duration):
-  assay_wrapper = []
-  control_wrapper = []
-  actuation_wrapper = []
-  env_wrapper = []
-  cell_wrapper = []
-  for assay_setup, control_setup, actuation_setup, br_setup, cell_setup in config:
-    assay_wrapper.append(assays.wrapper(**assay_setup))
-    control_wrapper.append(control_strategy.wrapper(**control_setup))
-    actuation_wrapper.append(actuation.wrapper(**actuation_setup))
-    env_wrapper.append(bioreactor.bioreactor(**br_setup))
-    cell_wrapper.append(cells.cell_instance(**cell_setup))
+  assay_wrappers = []
+  control_wrappers = []
+  actuation_wrappers = []
+  env_wrappers = []
+  cell_wrappers = []
+  for assay_setup, control_setup, br_setup, cell_setup in config:
+    assay_wrappers.append(assays.wrapper(**assay_setup))
+    next_control_wrapper = controls.wrapper(**control_setup)
+    control_wrappers.append(next_control_wrapper)
+    actuation_wrappers.append(actuation.wrapper(next_control_wrapper.actuation_list))
+    env_wrappers.append(bioreactor.bioreactor(**br_setup))
+    cell_wrappers.append(cells.cell_instance(**cell_setup))
   
   total_steps = duration / param.resolution
   
@@ -52,8 +65,10 @@ def run_experiments(config, duration):
       
       # Run simulation for a step
       assays = assay_wrapper[br].step(environment, cells, offline)
-      controls = control_wrapper[br](assays, actuation)
-      actuation = actuation_wrapper[br](controls)
+      #This will update setpoints for actuation, so actuation doesn't need an 
+      #input.
+      control_metrics = control_wrapper[br](assays, offline)
+      actuation = actuation_wrapper[br]()
       # Environment will increment timestep
       environment = env_wrapper[br](actuation, cells)
       cells = cell_wrapper[br](environment)

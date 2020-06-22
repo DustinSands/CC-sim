@@ -13,13 +13,14 @@ drift_sigma refers to drift per year variance
 import random
 
 import numpy as np
+from quantities import Quantity as Q
 
 import tests, param
 
 
 class machine:
-  """All machines have a random calibration error.  They then drift each time 
-  they are used until recalibrated."""
+  """All machines have a random calibration error.  They then drift until 
+  recalibrated."""
   # def __init__(self):
   #   self.systematic_error = random.gauss(1, self.sys_err_sigma)
 
@@ -33,7 +34,12 @@ class probe(machine):
     self.ratio = 1-(1-0.98)**(param.resolution/self.p['t98'])
     self.reference = cal_reference
 
-    
+class scale(machine):
+  p = param.instrumentation['Scale']
+  def read_value(self, environment, _):
+    random_error = Q(random.gauss(0, p['random_error_sigma']), 'g')
+    mass = environment['volume']*param.cc_density + random_error
+    return {'mass': mass}
   
 class O2_probe(probe):
   """All errors (except one-point) are introduced as a slope, not offset.
@@ -62,9 +68,9 @@ class O2_probe(probe):
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
     random_error = random.gauss(0, self.p['random_CV'])
-    value = environment['O2']*(1+drift_error+random_error)+self.sys_error
+    value = environment['dO2']*(1+drift_error+random_error)+self.sys_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
-    return {'O2': self.value}
+    return {'dO2': self.value}
     
   
 class pH_probe(probe):
@@ -145,7 +151,7 @@ class BGA(machine):
     O2 = self.read_O2_value(environment['O2'])
     pH = self.read_pH_value(environment['pH'])
     CO2 = self.read_CO2_value(environment['CO2'])
-    return {'O2': O2, 'pH': pH, 'CO2': CO2}
+    return {'dO2': O2, 'pH': pH, 'dCO2': CO2}
 
     
 class bioHT(machine):
@@ -174,8 +180,8 @@ class cell_counter(machine):
     random_error = random.gauss(0, self.p['size_random_error_sigma'])
     cell_size = cells['cell_size']+Q(random_error, 'um')+self.size_sys_error
     random_error = random.gauss(0, self.p['viability_random_error_sigma'])
-    viability = cells['cell_size']+random_error+self.size_sys_error
-    return {'VCD': value, 'cell_size': cell_size, 'viability': viability}
+    viability = cells['viability']+random_error+self.via_sys_error
+    return {'VCD': VCD, 'cell_size': cell_size, 'viability': viability}
 
 
 
@@ -183,7 +189,7 @@ class cell_counter(machine):
 class wrapper:
   """Main class that performs all the assays."""
   def __init__(self, BGA_instance, start_time, bioHT_list=None, pH = True, O2 = True, temp = True,
-               VCD = True):
+               VCD = True, scale = True):
     """Experimental_setup should take the form of:
       BGA: instance of BGA to calibrate against
       
@@ -201,6 +207,7 @@ class wrapper:
     if pH: self.online_assays.append(pH_probe(start_time, BGA_instance))
     if O2: self.online_assays.append(O2_probe(start_time, BGA_instance))
     if temp: self.online_assays.append(temperature_probe())
+    if scale: self.online_assays.append(scale())
     
   def step(self, environment, cells, offline):
     """Takes state of cells and environment and outputs assays.  

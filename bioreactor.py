@@ -40,10 +40,12 @@ class agitator:
   def __init__(self, impeller_type = 'rushton', 
                number = 1, 
                diameter = Q(6, 'cm'),
+               width = Q(2, 'cm')
                ):
     self.type = impeller_type
     self.number = number
     self.diameter = diameter
+    self.width = width
     if impeller_type == 'rushton':
       self.power_number = 5.5
     elif impeller_type == 'marine':
@@ -52,7 +54,7 @@ class agitator:
     
     self.ungassed_power_coeff = self.power_number*Q(1000, 'kg/m**3')*self.diameter**5
     
-  def ungassed_power(RPS):
+  def ungassed_power(self, RPS):
     return RPS**3*self.ungassed_power_coeff
   
 
@@ -61,12 +63,12 @@ class bioreactor:
   in the bioreactor.
   
   Assumed to be a perfectly cylindrical vessel for volume calculations."""
-  class __init__(self, start_time,
+  def __init__(self, start_time,
                  volume = Q(3, 'L'),
                  agitator = agitator(),
                  diameter = Q(13, 'cm'),     
                  sparger_height = Q(2, 'cm'), # Height from bottom of vessel
-                 sparge_class = drillhole,
+                 sparge_class = sparger(Q(500, 'um')),
                  cell_separation_device = None,     # Perfusion only
                  pressure = Q(760, 'mmHg'),
                  ):
@@ -78,8 +80,26 @@ class bioreactor:
     self.current_time = start_time
     
   def build_checklist(self):
+    """The checklist for items that affect:
+      gas percentages
+      kla (RPS, gas flow, volume)
+      working volume
+      """
+      
+      
     pass
     
+  def update_shear(self, RPS):
+    """Updates the shear rates with new RPS.
+    
+    Equations from:
+      R. Bowen, Unraveling the mysteries of shear-sensitive mixing systems,
+      Chem. Eng. 9 (June) (1986) 55–63.
+      """
+    ratio = (self.impeller.diameter / self.diameter)**0.3
+    self.mean_shear = 4.2*RPS*ratio*self.impeller.diameter / self.impeller.width
+    self.max_shear = mean_shear / 4.2 * 9.7
+  
   def check_and_update(self, actuation):
     for item in check_list:
       if actuation[item] != self.old[item]:
@@ -91,13 +111,14 @@ class bioreactor:
       # Is this in per hour or per minute?
       self.kla = self.kla_func(actuation['RPS'], actuation['gas_flow'], self.working_volume)
       self.gas_percentages = self.calc_gas_percentages(actuation)
+      self.update_shear(actuation['RPS'])
       
   def calc_gas_percentages(actuation):
     total = 0
     percent = {}
     for component in param.gas_components:
       total += actuation[component]
-    for component in p.tracked_components:
+    for component in param.tracked_components:
       percent[component] = actuation[component] / total
     # Assume N2 is irrelevant
     percent['O2'] += percent['air']*0.21
@@ -107,13 +128,23 @@ class bioreactor:
     """Calculate environmental changes."""
     self.check_and_update(actuation)
     self.current_time += param.resolution
-    for component in gas_transfer:
-      transfer_rate = (self.kla*param.kla_ratio[component])*\
-        (self.gas_percentages[component]*self.pressure - self.concentration[component])
     for component in param.tracked_components:
+      if component in param.gas_components:
+        transfer_rate = (self.kla*param.kla_ratio[component])*\
+          (self.gas_percentages[component]*self.pressure - self.concentration[component])
+      else:
+        transfer_rate = actuation[component]
       self.concentration[component] += (transfer_rate - cells['Uptake'][component]) * param.resolution
     
+    self.volume += actuation['liquid_volume_rate']
     
+    environment={'mean_shear':self.mean_shear, 
+                        'max_shear':self.max_shear,
+                        'volume':self.volume,
+                        
+                        }
+    for component in param.tracked_components:
+      environment.update({component:self.concentration[component]})
     
     
     
@@ -156,4 +187,4 @@ class bioreactor:
 
 
 if __name__ == '__main__':
-  tests.env_test()
+  tests.bioreactor_test()

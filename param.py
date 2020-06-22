@@ -4,6 +4,7 @@ Holds global parameters for the simulation
 """
 import numpy as np
 import quantities as q
+from quantities import Quantity as Q
 
 
 #The simulation resolution
@@ -12,7 +13,7 @@ resolution = np.timedelta64(1, 'm')
 
 # Same as simulation resolution, but in quantities package
 q_intermediate = resolution / np.timedelta64(1, 's')
-q_res = q.Quantity(q_intermediate, 's').simplified
+q_res = Q(q_intermediate, 's').simplified
 
 cells = q.unitquantity.IrreducibleUnit('cells', symbol = 'ce')
 cm = q.UnitQuantity('e5c', 1e5*cells, 'e5c')
@@ -23,8 +24,10 @@ q.HCD = q.CompoundUnit('e6c/ml')
 # cells = q.unitquantity.IrreducibleUnit('cell', symbol = 'cell')
 # cells = q.UnitQuantity('e5 cells', cells*1e5, symbol='e5c')
 
-tracked_components = ['CO2', 'O2', 'Glucose', 'H2CO3']
+tracked_components = ['dCO2', 'dO2', 'Glucose', 'H2CO3']
 gas_components = ['CO2', 'O2', 'air']
+
+cc_density = Q(1, 'g/mL') #Assumed constant.  Can be deleted when calculated density encoded
 
 # ERROR CONSTANTS
 instrumentation={
@@ -62,7 +65,23 @@ instrumentation={
     'viability_systematic_error_sigma':2, #net, s
     'size_random_error_sigma':0.1,
     'size_systematic_error_sigma':0.2,
+    },
+  'Scale':{
+    'random_error_sigma':0.02, #grams
     }
+  }
+
+actuation = {
+  'MFC':{
+    'systematic_error_CV': 0.005,
+    'break_chance': Q(1, '1/yr'),
+    },
+  'peristaltic':{
+    'systematic_error_CV': 0.03,
+    'break_chance': Q(1, '1/yr'),
+    },
+  'mixtures':{
+    'component_CV': 0.0005}
   }
 
 # Constants
