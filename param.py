@@ -16,6 +16,7 @@ q_intermediate = resolution / np.timedelta64(1, 's')
 q_res = Q(q_intermediate, 's').simplified
 
 cells = q.unitquantity.IrreducibleUnit('cells', symbol = 'ce')
+pg = q.UnitQuantity('pg', 1e-15*q.kg, 'picogram')
 cm = q.UnitQuantity('e5c', 1e5*cells, 'e5c')
 hcm = q.UnitQuantity('e6c', 1e6*cells, 'e6c')
 q.CD = q.CompoundUnit('e5c/ml')
@@ -24,7 +25,9 @@ q.HCD = q.CompoundUnit('e6c/ml')
 # cells = q.unitquantity.IrreducibleUnit('cell', symbol = 'cell')
 # cells = q.UnitQuantity('e5 cells', cells*1e5, symbol='e5c')
 
-tracked_components = ['dCO2', 'dO2', 'Glucose', 'H2CO3']
+tracked_components = ['dCO2', 'dO2', 'Glucose', 'H2CO3', 
+                      'iron', 'cysteine', 'LDH', 'lactate','pyruvate','ATP',
+                      'ADP',]
 gas_components = ['CO2', 'O2', 'air']
 
 cc_density = Q(1, 'g/mL') #Assumed constant.  Can be deleted when calculated density encoded

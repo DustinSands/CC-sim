@@ -17,37 +17,47 @@ Created on Mon Jun 15 14:10:00 2020
 import random
 
 import numpy as np
+from quantities import Quantity as Q
 
 import actuation, assays, cells, controls, bioreactor, param
 
 def create_config(num_experiments):
   start_time = np.datetime64('2020-01-01')
-  assay_setup = [assays.BGA(), start_time]
-  fed_batch_setup = [{'glucose', Q(500, 'g/L')}, np.timedelta64(24, 'h'), 
-                   'glucose', Q(2, 'g/L'), start_time, Q(1, 'e5c/ml')]
+  assay_setup = [assays.BGA(), start_time]  #Same BGA instance for all
+  fed_batch_setup = {'feed_mixture':{'glucose': Q(500, 'g/L')}, 
+                   'initial_volume':Q(0.5, 'L'),
+                   'sample_interval':np.timedelta64(24, 'h'), 
+                   'cpp':'glucose', 
+                   'set_point':Q(2, 'g/L'), 
+                   'initial_time': start_time, 
+                   'target_seeding_density':Q(1, 'e5c/ml')}
   aeration_setup = {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
-               'max_O2':Q(0.1, 'L/min')}]
-  control_setup = [controls.fed_batch_feed(*fed_batch_setup),
-                   controls.DH_aeration(**aeration_setup)]
+               'max_O2':Q(0.1, 'L/min')}
+  control_setup = [(controls.fed_batch_feed,[],fed_batch_setup),
+                   (controls.DH_aeration,[],aeration_setup)]
   
   br_setup = [start_time]
   cell_setup = []
+  config = (assay_setup, control_setup, br_setup, cell_setup)
+  return [config]*num_experiments
 
-def run_experiments(config, duration):
+def run_experiments(config, days):
   assay_wrappers = []
   control_wrappers = []
   actuation_wrappers = []
   env_wrappers = []
   cell_wrappers = []
   for assay_setup, control_setup, br_setup, cell_setup in config:
-    assay_wrappers.append(assays.wrapper(**assay_setup))
-    next_control_wrapper = controls.wrapper(**control_setup)
+    instance = assays.wrapper(*assay_setup)
+    assay_wrappers.append(instance)
+    next_control_wrapper = controls.wrapper(control_setup)
     control_wrappers.append(next_control_wrapper)
     actuation_wrappers.append(actuation.wrapper(next_control_wrapper.actuation_list))
-    env_wrappers.append(bioreactor.bioreactor(**br_setup))
-    cell_wrappers.append(cells.cell_instance(**cell_setup))
+    env_wrappers.append(bioreactor.bioreactor(*br_setup))
+    cell_wrappers.append(cells.cell_instance(*cell_setup))
   
-  total_steps = duration / param.resolution
+  steps_per_day = np.timedelta64(1, 'D') / param.resolution
+  total_steps = days*steps_per_day+random.gauss(0, steps_per_day*0.05)
   
   
   day = 0
@@ -58,19 +68,27 @@ def run_experiments(config, duration):
       if step == next_offline_step:
         offline = True
         day += 1
-        next_offline_step = day / param.resolution +\
-          random.gauss()
+        print(f'Day {day})!')
+        if day == days:
+          next_offline_step = total_steps - 1
+        else:
+          next_offline_step = steps_per_day*day +\
+            random.gauss(0,0.05*steps_per_day)
       else:
         offline = False
       
       # Run simulation for a step
-      assays = assay_wrapper[br].step(environment, cells, offline)
+      obs = assay_wrapper[br].step(environment, cells, offline)
       #This will update setpoints for actuation, so actuation doesn't need an 
       #input.
-      control_metrics = control_wrapper[br](assays, offline)
-      actuation = actuation_wrapper[br]()
+      control_metrics = control_wrapper[br](obs, offline)
+      actuation_out = actuation_wrapper[br]()
       # Environment will increment timestep
-      environment = env_wrapper[br](actuation, cells)
-      cells = cell_wrapper[br](environment)
+      environment = env_wrapper[br](actuation_out, cells_output)
+      cells_output = cell_wrapper[br](environment)
       
       #Record important data
+      
+if __name__ == '__main__':
+  config = create_config(2)
+  run_experiments(config, np.timedelta64(14, 'D'))

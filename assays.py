@@ -178,10 +178,10 @@ class cell_counter(machine):
     random_error = random.gauss(0, self.p['density_random_error_CV'])
     VCD = cells['VCD']*(1+random_error+self.density_sys_error)
     random_error = random.gauss(0, self.p['size_random_error_sigma'])
-    cell_size = cells['cell_size']+Q(random_error, 'um')+self.size_sys_error
+    cell_size = cells['cell_diameter']+Q(random_error, 'um')+self.size_sys_error
     random_error = random.gauss(0, self.p['viability_random_error_sigma'])
     viability = cells['viability']+random_error+self.via_sys_error
-    return {'VCD': VCD, 'cell_size': cell_size, 'viability': viability}
+    return {'VCD': VCD, 'cell_diameter': cell_size, 'viability': viability}
 
 
 
@@ -189,7 +189,7 @@ class cell_counter(machine):
 class wrapper:
   """Main class that performs all the assays."""
   def __init__(self, BGA_instance, start_time, bioHT_list=None, pH = True, O2 = True, temp = True,
-               VCD = True, scale = True):
+               VCD = True, use_scale = True):
     """Experimental_setup should take the form of:
       BGA: instance of BGA to calibrate against
       
@@ -207,7 +207,7 @@ class wrapper:
     if pH: self.online_assays.append(pH_probe(start_time, BGA_instance))
     if O2: self.online_assays.append(O2_probe(start_time, BGA_instance))
     if temp: self.online_assays.append(temperature_probe())
-    if scale: self.online_assays.append(scale())
+    if use_scale: self.online_assays.append(scale())
     
   def step(self, environment, cells, offline):
     """Takes state of cells and environment and outputs assays.  

@@ -51,6 +51,8 @@ class agitator:
     elif impeller_type == 'marine':
       self.power_number = 2.2
     else: raise ValueError('impeller not recognized!')
+                 ):
+    self.volume = float(volume.simplified)
     
     self.ungassed_power_coeff = self.power_number*Q(1000, 'kg/m**3')*self.diameter**5
     
@@ -71,10 +73,8 @@ class bioreactor:
                  sparge_class = sparger(Q(500, 'um')),
                  cell_separation_device = None,     # Perfusion only
                  pressure = Q(760, 'mmHg'),
-                 ):
-    self.volume = float(volume.simplified)
     self.agitator = agitator
-    self.CSA = tank_diamter**2/4*math.pi
+    self.CSA = diameter**2/4*math.pi
     self.diameter = diameter
     self.check_list = self.build_checklist()
     self.current_time = start_time
@@ -137,7 +137,7 @@ class bioreactor:
       self.concentration[component] += (transfer_rate - cells['Uptake'][component]) * param.resolution
     
     self.volume += actuation['liquid_volume_rate']
-    
+    cell_fraction = (cells['VCD']*cells['cell_diameter']**3*math.pi/6).simplified
     environment={'mean_shear':self.mean_shear, 
                         'max_shear':self.max_shear,
                         'volume':self.volume,

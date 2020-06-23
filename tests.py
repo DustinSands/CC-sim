@@ -66,9 +66,14 @@ def assays_test():
   
   print('passed assays')
   
+def cell_tests():
+  pass
+
 def bioreactor_test():
   pass
 
+def all_tests():
+  pass
 env1 = {'time':np.datetime64('2018-01-05T00:00'),
          'dO2': 60,
          'pH':7
@@ -80,7 +85,7 @@ env2 = {'time':np.datetime64('2018-05-16T00:00'),
 obs1 = {'dO2': 60}
 obs2 = {'dO2':55}
 cells = {'VCD': Q(10, 'e5c/ml'),
-         'cell_size': Q(14, 'um'),
+         'cell_diameter': Q(14, 'um'),
          'viability': 92}
   
 
@@ -89,6 +94,8 @@ def run_tests():
   quantities_test()
   assays_test()
   bioreactor_test()
+  cell_tests()
+  all_tests()
   
 
 

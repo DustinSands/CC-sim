@@ -50,7 +50,9 @@ class fed_batch_feed(feed_strategy):
   
   Assumes constant:
     cell-specific consumption rate (since last obs)
+    
     Volume
+    
     VCD (VCD of last time period is averaged)
   
   cpp must be a concentration.
@@ -150,14 +152,16 @@ class DH_aeration:
 
   
 class wrapper:
-  def __init__(self, control_list):
+  def __init__(self, control_setup):
     """control_setup is list of controls that are already initialized.
     Setup creates a list of actuation.
       """
     self.actuation_list = []
-    self.control_list = control_list
-    for control in control_list:
-      self.actuation_list.append(*control.actuation)
+    self.control_list = []
+    for control_type, args, kwargs in control_setup:
+      control = control_type(*args, **kwargs)
+      self.control_list.append(control)
+      self.actuation_list.extend(control.actuation)
       
   def step(self, assays, offline):
     metrics = {}
