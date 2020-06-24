@@ -26,8 +26,8 @@ q.HCD = q.CompoundUnit('e6c/ml')
 # cells = q.UnitQuantity('e5 cells', cells*1e5, symbol='e5c')
 
 tracked_components = ['dCO2', 'dO2', 'Glucose', 'H2CO3', 
-                      'iron', 'cysteine', 'LDH', 'lactate','pyruvate','ATP',
-                      'ADP',]
+                      'iron', 'LDH', 'lactate', 'amino_acids', 'component_A',
+                      'component_B', 'component_C', 'component_D']
 gas_components = ['CO2', 'O2', 'air']
 
 cc_density = Q(1, 'g/mL') #Assumed constant.  Can be deleted when calculated density encoded

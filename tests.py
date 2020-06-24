@@ -10,7 +10,7 @@ import numpy as np
 import quantities as q
 from quantities import Quantity as Q
 
-import controls, assays
+import controls, assays, bioreactor, cells
 import param
 
 def set_seeds(seed):
@@ -61,12 +61,14 @@ def assays_test():
   # assert 7.107234728864488==pH.read_value(state2, cells)['pH']
   
   vicell = assays.cell_counter()
-  print(vicell.read_value(env1, cells))
+  print(vicell.read_value(env1, cell_state))
   # assert Q(10.72273548515264, 'e5c/ml') == vicell.read_value(state, cells)
   
   print('passed assays')
   
 def cell_tests():
+  cell_line = cells.gen_cell_line()
+  cell_culture = cells.wrapper(cell_line, Q(1, 'e6c/ml'))
   pass
 
 def bioreactor_test():
@@ -84,7 +86,7 @@ env2 = {'time':np.datetime64('2018-05-16T00:00'),
          }
 obs1 = {'dO2': 60}
 obs2 = {'dO2':55}
-cells = {'VCD': Q(10, 'e5c/ml'),
+cell_state = {'VCD': Q(10, 'e5c/ml'),
          'cell_diameter': Q(14, 'um'),
          'viability': 92}
   
