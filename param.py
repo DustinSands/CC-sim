@@ -25,10 +25,12 @@ q.HCD = q.CompoundUnit('e6c/ml')
 # cells = q.unitquantity.IrreducibleUnit('cell', symbol = 'cell')
 # cells = q.UnitQuantity('e5 cells', cells*1e5, symbol='e5c')
 
-tracked_components = ['dCO2', 'dO2', 'Glucose', 'H2CO3', 
+liquid_components = ['dCO2', 'dO2', 'glucose', 'H2CO3', 
                       'iron', 'LDH', 'lactate', 'amino_acids', 'component_A',
                       'component_B', 'component_C', 'component_D']
 gas_components = ['CO2', 'O2', 'air']
+cell_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'CO2', ]
+
 
 cc_density = Q(1, 'g/mL') #Assumed constant.  Can be deleted when calculated density encoded
 
@@ -72,6 +74,18 @@ instrumentation={
   'Scale':{
     'random_error_sigma':0.02, #grams
     }
+  }
+
+cells = {
+  'component_A_production_rate':(Q(1, 'pg/ce/day')*q_res).simplified,
+  'extinction_coeff': 200,
+  'uptake_rate': Q(1e-15, 'L/m**2/min'), # 8e-7 m**3 min, corresponds to 2/min
+  'O2_consumption':1,
+  'aa_consumption':1,
+  'glucose_consumption':1,
+  'stagnant_O2_consumption':Q(,'g/min/L')*q_res
+  'glucose_consumption':Q(3e-11,'g/ce/hour')*q_res
+  'stagnant_aa_consumption':Q(,'g/min/L')*q_res
   }
 
 actuation = {

@@ -16,16 +16,18 @@ class mixture:
   
   Changeouts happen whenever empty.  Can be updated later."""
   p2 = param.actuation['mixtures']
-  def __init__(self, mixture_components, reservoir_size = Q(1, 'L')):
+  def __init__(self, mixture_components):
     """mixture_components:
       dict of component along with target concentration
     """
+    if reservoir_size ==None:
+      reservoir_size = Q(1, 'L')
     self.concentration = {}
     self.target_concentrations = mixture_components
     self.size = reservoir_size
     self.replace_source()
 
-  def dispense(self):
+  def dispense(self, rate):
     output = {}
     total_liquid = rate*param.q_res
     self.remaining -= total_liquid
@@ -72,13 +74,13 @@ class MFC:
     addition_rate = self.systematic_error * self.set_point * self.broken_mult
     return {self.component: addition_rate}
 
-class peristaltic(mixture):
+class peristaltic():
   """Takes the setpoint and returns actual amount dispensed.  Includes error
   in pump calibration (Default: sigma 3%) as well as any self-correcting measures. 
   
   Includes chance to break. (Default: 1/yr)"""
   p = param.actuation['peristaltic']
-  def __init__(self, mixture_components, 
+  def __init__(self, mixture_components,
                source_size = None, 
                self_correcting = False, 
                error_CV = p['systematic_error_CV'], 
@@ -88,12 +90,11 @@ class peristaltic(mixture):
     
     source_size affects how often it is changed out with a new batch (new errors)
     """
-    super().__init__(mixture_components)
     self.systematic_error = random.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
     self.set_point = Q(0, 'ml/min')
-    self.source = mixture(mixture_components)
+    self.source = mixture(mixture_components, source_size)
     
   def step(self):
     # Only called if pump is on.  Constant chance of breaking whenever
@@ -114,7 +115,7 @@ class wrapper:
     
   def step(self):
     actuation = {}
-    for item in param.tracked_components:
+    for item in param.liquid_components:
       actuation[item]=0
     actuation['liquid_volume']=0
     
@@ -122,8 +123,12 @@ class wrapper:
       components_added = item.step()
       for key, value in components_added.items():
         actuation[key] += value
+        
+    gas_volume = Q(0, 'L/min')
+    for component in param.gas_components:
+      total_gas += actuation[component]
     return actuation
-    # for component in param.tracked_components:
+    # for component in param.liquid_components:
     #   actuation.update({component:    })
     #   total +=
     # {'liquid_volume_rate':total}

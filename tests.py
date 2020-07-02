@@ -68,7 +68,7 @@ def assays_test():
   
 def cell_tests():
   cell_line = cells.gen_cell_line()
-  cell_culture = cells.wrapper(cell_line, Q(1, 'e6c/ml'))
+  cell_culture = cells.cell_wrapper(cell_line, Q(1, 'e6c/ml'))
   pass
 
 def bioreactor_test():
@@ -78,7 +78,7 @@ def all_tests():
   pass
 env1 = {'time':np.datetime64('2018-01-05T00:00'),
          'dO2': 60,
-         'pH':7
+         'pH':7,
          }
 env2 = {'time':np.datetime64('2018-05-16T00:00'),
          'dO2': 60,
@@ -89,6 +89,12 @@ obs2 = {'dO2':55}
 cell_state = {'VCD': Q(10, 'e5c/ml'),
          'cell_diameter': Q(14, 'um'),
          'viability': 92}
+
+# def graph_cells(parameter1, parameter2):
+#   cell_line = cells.gen_cell_line()
+#   instance = cells.cell_wrapper(cell_line, Q(1, 'e6c/ml'))
+#   for step in range(14*24*60):
+#     cells_out = instance.step(env1)
   
 
 def run_tests():

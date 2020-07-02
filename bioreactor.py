@@ -15,7 +15,6 @@ from quantities import Quantity as Q
 
 import param, tests
 
-
 class sparger:
   """Allows mass transfer between medium and gas.  Any sparger needs to output
   the oxygen transfer rate given:
@@ -29,6 +28,11 @@ class sparger:
     self.pore_size = pore_diameter
 
 
+"""Defines solubility equation for components that vary with temperature."""
+solubility = {
+  'dO2': lambda t: Q(0.05 - t/200, 'g/L/kPa'),
+  'CO2': lambda t: Q(2.1 - t*0.0275, 'g/L/kPa')
+  }
 
 
 class hollow_fiber:
@@ -79,6 +83,8 @@ class bioreactor:
     self.diameter = diameter
     self.check_list = self.build_checklist()
     self.current_time = start_time
+    self.kla_func = self.create_kla_function()
+    self.old = {}
     
   def build_checklist(self):
     """The checklist for items that affect:
@@ -86,9 +92,9 @@ class bioreactor:
       kla (RPS, gas flow, volume)
       working volume
       """
+    checklist = ['liquid_volume', '']
       
-      
-    pass
+    return checklist
     
   def update_shear(self, RPS):
     """Updates the shear rates with new RPS.
@@ -102,15 +108,11 @@ class bioreactor:
     self.max_shear = mean_shear / 4.2 * 9.7
   
   def check_and_update(self, actuation):
-    for item in check_list:
-      if actuation[item] != self.old[item]:
-        break
-    else: 
-      for item in check_list:
-        self.old[item] = actuation[item]
-      self.working_volume = self.update_working_volume(actuation)
+    if not actuation == self.old:
+      self.old = actuation
+      self.working_volume += actuation['liquid_volume']
       # Is this in per hour or per minute?
-      self.kla = self.kla_func(actuation['RPS'], actuation['gas_flow'], self.working_volume)
+      self.kla = self.kla_func(actuation['RPS'], actuation['gas_volume'], self.working_volume)
       self.gas_percentages = self.calc_gas_percentages(actuation)
       self.update_shear(actuation['RPS'])
       
@@ -119,7 +121,7 @@ class bioreactor:
     percent = {}
     for component in param.gas_components:
       total += actuation[component]
-    for component in param.tracked_components:
+    for component in param.liquid_components:
       percent[component] = actuation[component] / total
     # Assume N2 is irrelevant
     percent['O2'] += percent['air']*0.21
@@ -129,23 +131,30 @@ class bioreactor:
     """Calculate environmental changes."""
     self.check_and_update(actuation)
     self.current_time += param.resolution
-    for component in param.tracked_components:
+    cell_fraction = (cells['total_cells']*cells['cell_diameter']**3*math.pi/6).simplified
+    for component in param.liquid_components:
       if component in param.gas_components:
+        C_star = self.gas_percentages[component]*self.pressure*solubility[component](self.temperature)
         transfer_rate = (self.kla*param.kla_ratio[component])*\
-          (self.gas_percentages[component]*self.pressure - self.concentration[component])
+          (C_star - self.mass[component]/(self.volume*cell_fraction))
+        transfer_rate *= self.volume
       else:
         transfer_rate = actuation[component]
-      self.concentration[component] += (transfer_rate - cells['Uptake'][component]) * param.resolution
+      self.mass[component] += (transfer_rate - cells['mass_transfer'][component]*\
+                               self.volume) * param.resolution
+      self.mass[component] -= cells['mass_transfer'][component]
     
-    self.volume += actuation['liquid_volume_rate']
-    cell_fraction = (cells['VCD']*cells['cell_diameter']**3*math.pi/6).simplified
-    environment={'mean_shear':self.mean_shear, 
+    self.volume += actuation['liquid_volume']
+    
+    environment={'shear':self.mean_shear, 
                         'max_shear':self.max_shear,
                         'volume':self.volume,
                         
                         }
-    for component in param.tracked_components:
+    for component in param.liquid_components:
       environment.update({component:self.concentration[component]})
+      
+    environment['ph'] = 7.3 - self.concentration['CO2']
     
     
     

@@ -23,9 +23,13 @@ import actuation, assays, cells, controls, bioreactor, param
 
 def create_config(num_experiments):
   start_time = np.datetime64('2020-01-01')
+  initial_volume = :Q(0.5, 'L')
+  seed_density = Q(1, 'e6c/ml')
+  starting_cells = (initial_volume*seed_density).simplified
+  cell_line = cells.gen_cell_line()
   assay_setup = [assays.BGA(), start_time]  #Same BGA instance for all
   fed_batch_setup = {'feed_mixture':{'glucose': Q(500, 'g/L')}, 
-                   'initial_volume':Q(0.5, 'L'),
+                   'initial_volume':initial_volume,
                    'sample_interval':np.timedelta64(24, 'h'), 
                    'cpp':'glucose', 
                    'set_point':Q(2, 'g/L'), 
@@ -37,7 +41,7 @@ def create_config(num_experiments):
                    (controls.DH_aeration,[],aeration_setup)]
   
   br_setup = [start_time]
-  cell_setup = []
+  cell_setup = [cell_line, starting_cells]
   config = (assay_setup, control_setup, br_setup, cell_setup)
   return [config]*num_experiments
 
@@ -54,7 +58,7 @@ def run_experiments(config, days):
     control_wrappers.append(next_control_wrapper)
     actuation_wrappers.append(actuation.wrapper(next_control_wrapper.actuation_list))
     env_wrappers.append(bioreactor.bioreactor(*br_setup))
-    cell_wrappers.append(cells.cell_instance(*cell_setup))
+    cell_wrappers.append(cells.cell_wrapper(*cell_setup))
   
   steps_per_day = np.timedelta64(1, 'D') / param.resolution
   total_steps = days*steps_per_day+random.gauss(0, steps_per_day*0.05)

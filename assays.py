@@ -176,11 +176,12 @@ class cell_counter(machine):
   def read_value(self, environment, cells):
     # time_delta is time since last calibration
     random_error = random.gauss(0, self.p['density_random_error_CV'])
-    VCD = cells['VCD']*(1+random_error+self.density_sys_error)
+    VCD = cells['living_cells'] /env['volume']
+    VCD *=(1+random_error+self.density_sys_error)
     random_error = random.gauss(0, self.p['size_random_error_sigma'])
     cell_size = cells['cell_diameter']+Q(random_error, 'um')+self.size_sys_error
     random_error = random.gauss(0, self.p['viability_random_error_sigma'])
-    viability = cells['viability']+random_error+self.via_sys_error
+    viability = cells['living_cells']/cells['total_cells']*100+random_error+self.via_sys_error
     return {'VCD': VCD, 'cell_diameter': cell_size, 'viability': viability}
 
 
