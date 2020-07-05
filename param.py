@@ -17,6 +17,7 @@ q_res = Q(q_intermediate, 's').simplified
 
 cells = q.unitquantity.IrreducibleUnit('cells', symbol = 'ce')
 pg = q.UnitQuantity('pg', 1e-15*q.kg, 'picogram')
+ce = q.UnitQuantity('ce', cells, 'ce')
 cm = q.UnitQuantity('e5c', 1e5*cells, 'e5c')
 hcm = q.UnitQuantity('e6c', 1e6*cells, 'e6c')
 q.CD = q.CompoundUnit('e5c/ml')
@@ -31,8 +32,9 @@ liquid_components = ['dCO2', 'dO2', 'glucose', 'H2CO3',
 gas_components = ['CO2', 'O2', 'air']
 cell_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'CO2', ]
 
-
-cc_density = Q(1, 'g/mL') #Assumed constant.  Can be deleted when calculated density encoded
+gravity = Q(9.81, 'm/s**2')
+actual_cc_density = Q(0.98, 'g/mL') #Assumed constant.  Can be deleted when calculated density encoded
+expected_cc_density = Q(1, 'g/mL')
 
 # ERROR CONSTANTS
 instrumentation={
@@ -79,13 +81,10 @@ instrumentation={
 cells = {
   'component_A_production_rate':(Q(1, 'pg/ce/day')*q_res).simplified,
   'extinction_coeff': 200,
-  'uptake_rate': Q(1e-15, 'L/m**2/min'), # 8e-7 m**3 min, corresponds to 2/min
-  'O2_consumption':1,
-  'aa_consumption':1,
-  'glucose_consumption':1,
-  'stagnant_O2_consumption':Q(,'g/min/L')*q_res
-  'glucose_consumption':Q(3e-11,'g/ce/hour')*q_res
-  'stagnant_aa_consumption':Q(,'g/min/L')*q_res
+  'mass_transfer_rate': Q(1e-15, 'L/m**2/min'), # 8e-7 m**3 min, corresponds to 2/min
+  'O2_consumption':Q(5,'g/min/L'),
+  'glucose_consumption':Q(3e-11,'g/ce/hour'),
+  'aa_consumption':Q(5,'g/day/L'),
   }
 
 actuation = {

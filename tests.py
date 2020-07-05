@@ -10,7 +10,7 @@ import numpy as np
 import quantities as q
 from quantities import Quantity as Q
 
-import controls, assays, bioreactor, cells
+import controls, assays, bioreactor, cell_sim
 import param
 
 def set_seeds(seed):
@@ -67,8 +67,8 @@ def assays_test():
   print('passed assays')
   
 def cell_tests():
-  cell_line = cells.gen_cell_line()
-  cell_culture = cells.cell_wrapper(cell_line, Q(1, 'e6c/ml'))
+  cell_line = cell_sim.gen_cell_line()
+  cell_culture = cell_sim.cell_wrapper(cell_line, Q(1, 'e6c/ml'))
   pass
 
 def bioreactor_test():
@@ -92,7 +92,7 @@ cell_state = {'VCD': Q(10, 'e5c/ml'),
 
 # def graph_cells(parameter1, parameter2):
 #   cell_line = cells.gen_cell_line()
-#   instance = cells.cell_wrapper(cell_line, Q(1, 'e6c/ml'))
+#   instance = cell_sim.cell_wrapper(cell_line, Q(1, 'e6c/ml'))
 #   for step in range(14*24*60):
 #     cells_out = instance.step(env1)
   

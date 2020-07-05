@@ -37,8 +37,8 @@ class probe(machine):
 class scale(machine):
   p = param.instrumentation['Scale']
   def read_value(self, environment, _):
-    random_error = Q(random.gauss(0, p['random_error_sigma']), 'g')
-    mass = environment['volume']*param.cc_density + random_error
+    random_error = Q(random.gauss(0, self.p['random_error_sigma']), 'g')
+    mass = environment['volume']*param.actual_cc_density + random_error
     return {'mass': mass}
   
 class O2_probe(probe):
@@ -68,7 +68,8 @@ class O2_probe(probe):
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
     random_error = random.gauss(0, self.p['random_CV'])
-    value = environment['dO2']*(1+drift_error+random_error)+self.sys_error
+    percent_DO = environment['dO2']/Q(0.0067, 'g/L')
+    value = percent_DO*(1+drift_error+random_error)+self.sys_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
     return {'dO2': self.value}
     
@@ -114,6 +115,7 @@ class temperature_probe(machine):
     #Large offset as probe isn't yet calibrated
     self.sys_error = random.gauss(0, self.p['systematic_sigma'])
     self.value = 30
+    self.ratio = 1-(1-0.98)**(param.resolution/self.p['t98'])
     
   
   def read_value(self, environment, cells):
@@ -148,7 +150,7 @@ class BGA(machine):
   
   def read_value(self, environment, cells):
     """For BGA usage as part of offline assays."""
-    O2 = self.read_O2_value(environment['O2'])
+    O2 = self.read_O2_value(environment['dO2'])
     pH = self.read_pH_value(environment['pH'])
     CO2 = self.read_CO2_value(environment['CO2'])
     return {'dO2': O2, 'pH': pH, 'dCO2': CO2}
@@ -158,6 +160,7 @@ class bioHT(machine):
   """Performs various assays.  Takes tests to perform as argument."""
   
   def __init__(self, assays):
+    raise ValueError('BioHT not implemented!')
     pass
 
 class cell_counter(machine):
@@ -173,13 +176,13 @@ class cell_counter(machine):
     self.size_sys_error = Q(random.gauss(0, self.p['size_systematic_error_sigma']), 'um')
     self.via_sys_error = random.gauss(0, self.p['viability_systematic_error_sigma'])
     
-  def read_value(self, environment, cells):
+  def read_value(self, env, cells):
     # time_delta is time since last calibration
     random_error = random.gauss(0, self.p['density_random_error_CV'])
     VCD = cells['living_cells'] /env['volume']
     VCD *=(1+random_error+self.density_sys_error)
     random_error = random.gauss(0, self.p['size_random_error_sigma'])
-    cell_size = cells['cell_diameter']+Q(random_error, 'um')+self.size_sys_error
+    cell_size = cells['diameter']+Q(random_error, 'um')+self.size_sys_error
     random_error = random.gauss(0, self.p['viability_random_error_sigma'])
     viability = cells['living_cells']/cells['total_cells']*100+random_error+self.via_sys_error
     return {'VCD': VCD, 'cell_diameter': cell_size, 'viability': viability}
@@ -202,7 +205,7 @@ class wrapper:
     """
     self.online_assays = []
     self.offline_assays = [BGA_instance]
-    if bioHT != None:
+    if bioHT_list != None:
       self.offline_assays.append(bioHT(bioHT_list))
     if VCD: self.offline_assays.append(cell_counter())
     if pH: self.online_assays.append(pH_probe(start_time, BGA_instance))

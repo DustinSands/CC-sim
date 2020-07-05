@@ -34,6 +34,8 @@ class feed_strategy:
     self.seeding_density = target_seeding_density
     self.seed_time = initial_time
     self.VCD = self.seeding_density
+    self.last_VCD = target_seeding_density
+    self.last_mass = self.initial_volume*param.expected_cc_density
     self.interval = sample_interval
     self.sp = set_point
     self.cpp = cpp
@@ -60,11 +62,13 @@ class fed_batch_feed(feed_strategy):
   """
   def __init__(self, feed_mixture = None, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.addition_rate = 0
+    self.addition_rate = Q(0, 'ml/min')
     self.last_time = self.seed_time
+    
     if feed_mixture == None:
       feed_mixture = {'glucose':Q(500, 'g/L')}
     self.actuation = [actuation.peristaltic(feed_mixture)]
+
     
   def update_control(self, obs):
     time_since_last_obs = (obs['time']-self.last_time)
@@ -165,7 +169,7 @@ class wrapper:
       
   def step(self, assays, offline):
     metrics = {}
-    for control in control_list:
+    for control in self.control_list:
       metric = control.step(assays, offline)
       metrics.update(metric)
     

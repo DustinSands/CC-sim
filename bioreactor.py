@@ -15,22 +15,9 @@ from quantities import Quantity as Q
 
 import param, tests
 
-class sparger:
-  """Allows mass transfer between medium and gas.  Any sparger needs to output
-  the oxygen transfer rate given:
-    -power number
-    -gas flow rate
-    -sparger depth
-    -saturation in the media
-    
-  """
-  def __init__(self, pore_diameter = Q(20, 'um')):
-    self.pore_size = pore_diameter
-
-
 """Defines solubility equation for components that vary with temperature."""
 solubility = {
-  'dO2': lambda t: Q(0.05 - t/200, 'g/L/kPa'),
+  'dO2': lambda t: Q(0.05 - t*0.000475, 'g/L/kPa'),
   'CO2': lambda t: Q(2.1 - t*0.0275, 'g/L/kPa')
   }
 
@@ -69,13 +56,14 @@ class bioreactor:
   
   Assumed to be a perfectly cylindrical vessel for volume calculations."""
   def __init__(self, start_time,
+                 initial_components,
                  volume = Q(3, 'L'),
                  agitator = agitator(),
                  diameter = Q(13, 'cm'),     
                  sparger_height = Q(2, 'cm'), # Height from bottom of vessel
-                 sparge_class = sparger(Q(500, 'um')),
+                 sparger_pore_size = Q(20, 'um'),
                  cell_separation_device = None,     # Perfusion only
-                 pressure = Q(760, 'mmHg'),
+                 head_pressure = Q(760, 'mmHg'),
                  ):
     self.volume = volume
     self.agitator = agitator
@@ -83,8 +71,13 @@ class bioreactor:
     self.diameter = diameter
     self.check_list = self.build_checklist()
     self.current_time = start_time
+    self.sparger_pore_size = sparger_pore_size
     self.kla_func = self.create_kla_function()
     self.old = {}
+    self.pressure = sparger_height/2*param.actual_cc_density*param.gravity+head_pressure
+    self.mass = initial_components
+    self.sparger_height = sparger_height
+
     
   def build_checklist(self):
     """The checklist for items that affect:
@@ -156,9 +149,6 @@ class bioreactor:
       
     environment['ph'] = 7.3 - self.concentration['CO2']
     
-    
-    
-    
   def create_kla_function(self):
     """Calculate and return a function for oxygen transfer rate.
     
@@ -172,7 +162,7 @@ class bioreactor:
     B = 0.47 * diam_ratio**1.3
     C = 0.64 - 1.1 * diam_ratio
     froude_coeff = self.agitator.diameter / Q(9.81, 'm/s**2')
-    velocity_coeff = 1/(math.pi * self.sparger.pore_diameter**2/4)
+    velocity_coeff = 1/(math.pi * self.sparger_pore_size**2/4)
       
     def kla_func(RPS, gas_flow, working_volume):
       froude = froud_coeff*RPS
@@ -185,6 +175,7 @@ class bioreactor:
       superficial_velocity = gas_flow * velocity_coeff
       kla = 1080*((lower_gassed_power+upper_gassed_power) / working_volume)** \
         0.39 * superficial_velocity**0.79
+      kla = Q(kla, '1/min')
       return kla
     return kla_func
 

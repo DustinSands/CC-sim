@@ -16,7 +16,7 @@ class mixture:
   
   Changeouts happen whenever empty.  Can be updated later."""
   p2 = param.actuation['mixtures']
-  def __init__(self, mixture_components):
+  def __init__(self, mixture_components, reservoir_size):
     """mixture_components:
       dict of component along with target concentration
     """
