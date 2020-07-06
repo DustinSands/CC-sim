@@ -28,13 +28,16 @@ q.HCD = q.CompoundUnit('e6c/ml')
 
 liquid_components = ['dCO2', 'dO2', 'glucose', 'H2CO3', 
                       'iron', 'LDH', 'lactate', 'amino_acids', 'component_A',
-                      'component_B', 'component_C', 'component_D']
+                      'component_B', 'component_C', 'component_D', 'IGG_a',
+                      'IGG_b', 'IGG_n']
 gas_components = ['CO2', 'O2', 'air']
-cell_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'CO2', ]
+cell_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'dCO2', 'IGG_a',
+                      'IGG_b', 'IGG_n']
 
 gravity = Q(9.81, 'm/s**2')
-actual_cc_density = Q(0.98, 'g/mL') #Assumed constant.  Can be deleted when calculated density encoded
-expected_cc_density = Q(1, 'g/mL')
+actual_cc_density = Q(980, 'g/L') #Assumed constant.  Can be deleted when calculated density encoded
+expected_cc_density = Q(1000, 'g/L')
+viscosity = Q(0.001, 'Pa*s')
 
 # ERROR CONSTANTS
 instrumentation={
@@ -64,6 +67,10 @@ instrumentation={
       'random_sigma' : 0.01,      # net
       'systematic_sigma': 0.05    # net
       },
+    },
+  'bioHT':{
+    'random_error_CV':0.04,     #LC
+    'systematic_error_CV':0.03, #LC
     },
   'Cell_Counter':{
     'density_random_error_CV':0.05,      # s
@@ -95,6 +102,10 @@ actuation = {
   'peristaltic':{
     'systematic_error_CV': 0.03,
     'break_chance': Q(1, '1/yr'),
+    },
+  'agitator':{
+    'systematic_error_CV': 0.01,
+    'break_chance': Q(0, '1/yr'),
     },
   'mixtures':{
     'component_CV': 0.0005}

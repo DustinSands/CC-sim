@@ -229,11 +229,12 @@ class cell_wrapper:
     metabolic_scalar = metabolism_rate * limiting_ratio 
     self.concentration['glucose'] -= metabolic_scalar*glucose_consumption_rate/self.volume
     self.concentration['dO2'] -= metabolic_scalar*O2_vol_consumption_rate
-    self.concentration['CO2'] += metabolic_scalar*O2_vol_consumption_rate
+    self.concentration['dCO2'] += metabolic_scalar*O2_vol_consumption_rate
     self.concentration['amino_acids'] -= metabolic_scalar*aa_vol_consumption_rate
-    
+    IGG_production = metabolic_scalar*aa_vol_consumption_rate
     self.calc_death(env, limiting_ratio, metabolism_rate)
     self.calc_growth(env, metabolism_rate)
+    return IGG_production
     
   def update_in_range(self, env):
     """
@@ -262,7 +263,7 @@ class cell_wrapper:
     metabolism and perform both intake and consumption back-to-back.
     """
     mass_transfer = self.calc_mass_transfer(env)
-    self.metabolism(env, mass_transfer)
+    IGG_production = self.metabolism(env, mass_transfer)
     
     living_cells = self.delayed_death_buckets.sum()+self.dying_cells + self.viable_cells
     cells['viability'] = living_cells / (living_cells+self.dead_cells)*100
@@ -281,6 +282,10 @@ class cell_wrapper:
       self.out_of_range['pH']*0.4
     basic_fraction = self.out_of_range['component_B']*0.25+self.out_of_range['dO2']*0.5+\
       self.out_of_range['temperature']*-0.1
+    self.concentration['IGG_a'] = acidic_fraction * IGG_production
+    self.concentration['IGG_b'] = basic_fraction * IGG_production
+    self.concentration['IGG_n'] = (1-basic_fraction - acidic_fraction) * IGG_production
+    
     
     #shock - not implemented
     cells['mass_transfer'] = {component:value*self.viable_cells for 

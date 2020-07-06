@@ -27,8 +27,8 @@ def controls_tests():
   # print(aeration.actuation[0].set_point)
   # print(aeration.step(obs2))
   # print(aeration.actuation[0].set_point)
-  assert aeration.step(obs1)['aeration_PID']==5
-  assert aeration.step(obs2)['aeration_PID']==11.083333333333332
+  assert aeration.step(obs1, False)['aeration_PID']==5
+  assert aeration.step(obs2, False)['aeration_PID']==11.083333333333332
   
   print('passed feeding strategy')
   

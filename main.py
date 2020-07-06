@@ -21,10 +21,14 @@ def create_config(num_experiments):
   seed_density = Q(1, 'e6c/ml')
   starting_cells = (initial_volume*seed_density).simplified
   cell_line = cell_sim.gen_cell_line()
-  assay_setup = [assays.BGA(), start_time]  #Same BGA instance for all
+  assay_setup = [assays.BGA(), 
+                 assays.cell_counter(),
+                 start_time,
+                 assays.bioHT(),
+                 ['glucose', 'IGG']]  #Same BGA, cell_counter, bioHT instance for all
   fed_batch_setup = {'feed_mixture':{'glucose': Q(500, 'g/L')}, 
                    'initial_volume':initial_volume,
-                   'sample_interval':np.timedelta64(24, 'h'), 
+                   'sample_interval':Q(24, 'h'), 
                    'cpp':'glucose', 
                    'set_point':Q(2, 'g/L'), 
                    'initial_time': start_time, 
@@ -32,7 +36,7 @@ def create_config(num_experiments):
   aeration_setup = {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
                'max_O2':Q(0.1, 'L/min')}
   control_setup = [(controls.fed_batch_feed,[],fed_batch_setup),
-                   (controls.DH_aeration,[],aeration_setup)]
+                   (controls.aeration,[],aeration_setup)]
   media_concentrations = {'dCO2':Q(2, 'g/L'), 
            'dO2':Q(2, 'g/L'), 
            'glucose':Q(2, 'g/L'), 
@@ -50,6 +54,7 @@ def create_config(num_experiments):
     media[component] = Q(0, 'g')
     if component in media_concentrations:
       media[component] = initial_volume*media_concentrations[component]
+      media['liquid_volume'] = initial_volume
   br_setup = [start_time, media]
   cell_setup = [cell_line, starting_cells]
   config = (assay_setup, control_setup, br_setup, cell_setup)
@@ -74,14 +79,14 @@ def run_experiments(config, days):
   total_steps = steps_per_day+random.gauss(0, steps_per_day*0.05)
   
   
-  day = 0
+  day = -1
   next_offline_step = 0
   
   #Define initial values to pass
   environment = {
     'temperature':36,
     'pH':7,
-    'CO2': Q(1, 'g/L'),
+    'dCO2': Q(1, 'g/L'),
     'dO2':Q(0.01, 'g/L'),
     'time':np.datetime64('2020-01-01'),
     'volume':Q(0.5, 'L'),
@@ -94,6 +99,9 @@ def run_experiments(config, days):
     'glucose':Q(2, 'g/L'),
     'iron':Q(.5, 'g/L'),
     'amino_acids':Q(5, 'g/L'),
+    'IGG_a':Q(0, 'g/L'),
+    'IGG_b':Q(0, 'g/L'),
+    'IGG_n':Q(0, 'g/L')
     }
   
   
@@ -103,11 +111,11 @@ def run_experiments(config, days):
       if step == next_offline_step:
         offline = True
         day += 1
-        print(f'Day {day})!')
+        print(f'Day {day}!')
         if day == days:
           next_offline_step = total_steps - 1
         else:
-          next_offline_step = steps_per_day*day +\
+          next_offline_step = steps_per_day*(day+1) +\
             random.gauss(0,0.05*steps_per_day)
       else:
         offline = False
@@ -117,9 +125,9 @@ def run_experiments(config, days):
       #This will update setpoints for actuation, so actuation doesn't need an 
       #input.
       control_metrics = control_wrappers[br].step(obs, offline)
-      actuation_out = actuation_wrapper[br].step()
+      actuation_out = actuation_wrappers[br].step()
       # Environment will increment timestep
-      environment = env_wrapper[br].step(actuation_out, cells_output)
+      environment = env_wrappers[br].step(actuation_out, cells_output)
       # cells_output = cell_wrapper[br](environment)
       
       #Record important data

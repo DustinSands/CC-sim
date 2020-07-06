@@ -21,21 +21,20 @@ class mixture:
       dict of component along with target concentration
     """
     if reservoir_size ==None:
-      reservoir_size = Q(1, 'L')
+      reservoir_size = Q(1., 'L')
     self.concentration = {}
     self.target_concentrations = mixture_components
     self.size = reservoir_size
     self.replace_source()
 
-  def dispense(self, rate):
+  def dispense(self, liquid_rate):
     output = {}
-    total_liquid = rate*param.q_res
-    self.remaining -= total_liquid
+    self.remaining -= liquid_rate*param.q_res
     if self.remaining < 0:    #Update at some point to happen during offline assays?
       self.replace_source()
-    for component, concentration in self.concentration:
-      output[component] = concentration*total_liquid
-    output['liquid_volume'] = total_liquid
+    for component, concentration in self.concentration.items():
+      output[component] = concentration*liquid_rate
+    output['liquid_volume'] = liquid_rate
     return output
     
   def replace_source(self):
@@ -63,13 +62,15 @@ class MFC:
     self.broken_mult = 1
     self.set_point = Q(0, 'L/min')
     self.component = component
+    self.break_chance = float((break_chance*param.q_res).simplified)
+
 
   
   def step(self):
     if self.set_point != 0:
       # Only called if pump is on.  Constant chance of breaking whenever
       # the pump is on.
-      if random.random()<float(break_chance*param.resolution):
+      if random.random()<self.break_chance:
         self.broken_mult = 0
     addition_rate = self.systematic_error * self.set_point * self.broken_mult
     return {self.component: addition_rate}
@@ -95,16 +96,42 @@ class peristaltic():
     self.broken_mult = 1
     self.set_point = Q(0, 'ml/min')
     self.source = mixture(mixture_components, source_size)
+    self.break_chance = float((break_chance*param.q_res).simplified)
     
   def step(self):
-    # Only called if pump is on.  Constant chance of breaking whenever
-    # the pump is on.
-    if random.random()<float(break_chance*param.resolution):
-      self.broken_mult = 0
-    total_liquid = self.error * self.set_point * self.broken_mult
-    return self.dispense(total_liquid)
+    if self.set_point != 0:
+      # Only called if pump is on.  Constant chance of breaking whenever
+      # the pump is on.
+      if random.random()<self.break_chance:
+        self.broken_mult = 0
+    liquid_rate = self.systematic_error * self.set_point * self.broken_mult
+    return self.source.dispense(liquid_rate)
+
+class agitator():
+  """ Controls the motor for the agitator."""
+  p = param.actuation['agitator']
+  def __init__(self, RPS,
+               error_CV = p['systematic_error_CV'], 
+               break_chance = p['break_chance']):
+    """mixture_components is passed to mixture.  Should be dict of target
+    concentrations of the mixture.
     
-  
+    source_size affects how often it is changed out with a new batch (new errors)
+    """
+    self.systematic_error = random.gauss(1, error_CV)
+    # 1 = working fine, 0 = broken
+    self.broken_mult = 1
+    self.set_point = RPS
+    self.break_chance = float((break_chance*param.q_res).simplified)
+    
+  def step(self):
+    if self.set_point != 0:
+      # Only called if pump is on.  Constant chance of breaking whenever
+      # the pump is on.
+      if random.random()<self.break_chance:
+        self.broken_mult = 0
+    rate = self.systematic_error * self.set_point * self.broken_mult
+    return {'RPS':rate}
 # class scale:
 #   """A scale.  Assumes you're using it within range.  These things are pretty
 #   reliable and accurate, so no sources of error introduced here."""
@@ -116,17 +143,23 @@ class wrapper:
   def step(self):
     actuation = {}
     for item in param.liquid_components:
-      actuation[item]=0
-    actuation['liquid_volume']=0
+      actuation[item]=Q(0., 'g/min')
+    for item in param.gas_components:
+      actuation[item] = Q(0., 'L/min')
+    actuation['liquid_volume']=Q(0., 'L/min')
+    actuation['gas_volume']=Q(0., 'L/min')
+    actuation['RPS'] = 0 
     
     for item in self.actuation_list:
       components_added = item.step()
       for key, value in components_added.items():
+        print(key, actuation[key], value)
         actuation[key] += value
         
     gas_volume = Q(0, 'L/min')
     for component in param.gas_components:
-      total_gas += actuation[component]
+      actuation['gas_volume'] += actuation[component]
+
     return actuation
     # for component in param.liquid_components:
     #   actuation.update({component:    })

@@ -7,6 +7,7 @@ Created on Mon Jun  8 18:30:40 2020
 import random
 
 from quantities import Quantity as Q
+import numpy as np
 
 import tests, actuation, param
 
@@ -43,8 +44,8 @@ class feed_strategy:
   def step(self, obs, offline):
     #Check if there is a new reading for the control parameter
     if offline:
-      self.update_control(obs)
-    return
+      metric = self.update_control(obs)
+    return metric
   
 class fed_batch_feed(feed_strategy):
   """Fed-batch reactor.  Adds a constant amount of specified feed in order to 
@@ -62,27 +63,46 @@ class fed_batch_feed(feed_strategy):
   """
   def __init__(self, feed_mixture = None, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.addition_rate = Q(0, 'ml/min')
-    self.last_time = self.seed_time
+    self.addition_rate = Q(0, 'g/min')
+    self.last_time = self.seed_time-np.timedelta64(1, 'D')
     
     if feed_mixture == None:
       feed_mixture = {'glucose':Q(500, 'g/L')}
+    self.feed_mixture = feed_mixture
     self.actuation = [actuation.peristaltic(feed_mixture)]
 
     
+  # def update_control(self, obs):
+  #   time_since_last_obs = Q((obs['time']-self.last_time)/np.timedelta64(1, 'm'), 'min')
+  #   average_VCD = (obs['VCD']+self.last_VCD)/2
+  #   consumption_rate = \
+  #     (self.addition_rate - (obs['mass']-self.last_mass)/time_since_last_obs) /\
+  #     average_VCD
+  #   self.predicted_VCD = obs['VCD'] #Maybe update this later....
+  #   self.addition_rate = (self.sp - obs[self.cpp])*obs['Volume']/self.interval +\
+  #     self.predicted_VCD*consumption_rate
+  #   self.last_mass = obs['mass']
+  #   self.last_VCD = obs['VCD']
+  #   self.last_time = obs['time']
+  #   self.actuation.set_point = self.addition_rate
+    
   def update_control(self, obs):
-    time_since_last_obs = (obs['time']-self.last_time)
+    if not self.cpp in obs:
+      raise ValueError('CPP not included in assays!')
+    time_since_last_obs = Q((obs['time']-self.last_time)/np.timedelta64(1, 'm'), 'min')
     average_VCD = (obs['VCD']+self.last_VCD)/2
-    consumption_rate = \
-      (self.addition_rate - (obs['mass']-self.last_mass)/time_since_last_obs) /\
-      average_VCD
-    self.predicted_VCD = obs['VCD'] #Maybe update this later....
-    self.addition_rate = (self.sp - obs[self.cpp])*obs['Volume']/self.interval +\
+    new_mass = obs[self.cpp]*obs['mass']/param.expected_cc_density
+    consumption_rate = (self.addition_rate - \
+      (new_mass-self.last_mass)/time_since_last_obs)/average_VCD
+    self.predicted_VCD = 2*obs['VCD']-average_VCD #Maybe update this later....
+    self.addition_rate = (self.sp - obs[self.cpp])*obs['mass']/param.expected_cc_density/\
+      self.interval +\
       self.predicted_VCD*consumption_rate
-    self.last_mass = obs['mass']
+    self.last_mass = new_mass
     self.last_VCD = obs['VCD']
     self.last_time = obs['time']
-    self.actuation.update(self.addition_rate)
+    self.actuation[0].set_point = self.addition_rate / self.feed_mixture[self.cpp]
+    return {'glucose_solution':self.actuation[0].set_point}
 
 class dynamic_perfusion_feed(feed_strategy):
   """Perfusion reactor.  Adds a constant amount of nutrient in order to maintain
@@ -131,8 +151,8 @@ class PID:
       else: response = 100    
     return response
   
-class DH_aeration:
-  """Drillhole aeration strategy.  Uses a PID to first add air to max air, then
+class aeration:
+  """aeration strategy.  Uses a PID to first add air to max air, then
   adds oxygen to max oxygen.
   """
   def __init__(self, setpoint, max_air = Q(0.2, 'L/min'), 
@@ -140,11 +160,11 @@ class DH_aeration:
     """max_air and max_O2 should be in volumetric flow rates."""
     self.PID = PID(0.1, Q(1/15, '1/min'), Q(3, 'min'), 
                    setpoint, 5)
-    self.actuation = [actuation.MFC('air'), actuation.MFC('O2')]
+    self.actuation = [actuation.MFC('air'), actuation.MFC('O2'), actuation.agitator(300/60)]
     self.max_air = max_air
     self.max_O2 = max_O2
     
-  def step(self, obs):
+  def step(self, obs, offline):
     PID_out = self.PID.step(obs['dO2'])
     if PID_out < 80:
       self.actuation[0].set_point = PID_out/80 * self.max_air

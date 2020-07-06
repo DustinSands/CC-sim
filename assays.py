@@ -68,7 +68,7 @@ class O2_probe(probe):
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
     random_error = random.gauss(0, self.p['random_CV'])
-    percent_DO = environment['dO2']/Q(0.0067, 'g/L')
+    percent_DO = environment['dO2']/Q(0.000067, 'g/L')
     value = percent_DO*(1+drift_error+random_error)+self.sys_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
     return {'dO2': self.value}
@@ -152,16 +152,31 @@ class BGA(machine):
     """For BGA usage as part of offline assays."""
     O2 = self.read_O2_value(environment['dO2'])
     pH = self.read_pH_value(environment['pH'])
-    CO2 = self.read_CO2_value(environment['CO2'])
-    return {'dO2': O2, 'pH': pH, 'dCO2': CO2}
+    CO2 = self.read_CO2_value(environment['dCO2'])
+    return {'BGA_dO2': O2, 'BGA_pH': pH, 'BGA_dCO2': CO2}
 
     
 class bioHT(machine):
   """Performs various assays.  Takes tests to perform as argument."""
+  p = param.instrumentation['bioHT']
+  def __init__(self, **kwargs):
+    super().__init__(**kwargs)
+    #Large offset as probe isn't yet calibrated
+    available_assays = ['glucose', 'IGG', 'ammonia', 'glutamine', 'iron']
+    self.sys_error = {}
+    for assay in available_assays:
+      self.sys_error[assay] = random.gauss(0, self.p['systematic_error_CV'])
+    self.error_CV = lambda assay: (
+      1+random.gauss(0, self.p['random_error_CV'])+self.sys_error[assay]) 
+    
+  def read_value(self, assay, env, cells):
+    if assay == 'IGG':
+      value = env['IGG_a']+env['IGG_b']+env['IGG_n']
+    else: value = env[assay]
+    return {assay: value*self.error_CV(assay)}
   
-  def __init__(self, assays):
-    raise ValueError('BioHT not implemented!')
-    pass
+    # return {assay:value(environment[assay],assay) for assay in self.assay_list}
+
 
 class cell_counter(machine):
   """No drift implemented, as was not able to find any figures for this."""
@@ -192,10 +207,13 @@ class cell_counter(machine):
   
 class wrapper:
   """Main class that performs all the assays."""
-  def __init__(self, BGA_instance, start_time, bioHT_list=None, pH = True, O2 = True, temp = True,
-               VCD = True, use_scale = True):
+  def __init__(self, BGA_instance, cell_counter,  start_time, bioHT=None,
+               bioHT_list=None, pH = True, O2 = True, temp = True,
+               use_scale = True):
     """Experimental_setup should take the form of:
       BGA: instance of BGA to calibrate against
+      bioHT: instance of bioHT
+      cell_counter: instance of cell_counter
       
       bioHT_list: list of bool for assays to run (see bioHT).  None for no bioHT
       pH: bool
@@ -204,14 +222,16 @@ class wrapper:
       )
     """
     self.online_assays = []
-    self.offline_assays = [BGA_instance]
-    if bioHT_list != None:
-      self.offline_assays.append(bioHT(bioHT_list))
-    if VCD: self.offline_assays.append(cell_counter())
-    if pH: self.online_assays.append(pH_probe(start_time, BGA_instance))
-    if O2: self.online_assays.append(O2_probe(start_time, BGA_instance))
-    if temp: self.online_assays.append(temperature_probe())
-    if use_scale: self.online_assays.append(scale())
+    self.offline_assays = [BGA_instance.read_value]
+    for assay in bioHT_list:
+      if bioHT == None:
+        raise ValueError('Need instance of bioHT to run assays!')
+      self.offline_assays.append(lambda env, cell, assay = assay:bioHT.read_value(assay, env, cell))
+    if cell_counter != None: self.offline_assays.append(cell_counter.read_value)
+    if pH: self.online_assays.append(pH_probe(start_time, BGA_instance).read_value)
+    if O2: self.online_assays.append(O2_probe(start_time, BGA_instance).read_value)
+    if temp: self.online_assays.append(temperature_probe().read_value)
+    if use_scale: self.online_assays.append(scale().read_value)
     
   def step(self, environment, cells, offline):
     """Takes state of cells and environment and outputs assays.  
@@ -222,10 +242,10 @@ class wrapper:
       """
     results={'time':environment['time']}
     for assay in self.online_assays:
-      results.update(assay.read_value(environment, cells))
+      results.update(assay(environment, cells))
     if offline:
       for assay in self.offline_assays:
-        results.update(assay.read_value(environment, cells))
+        results.update(assay(environment, cells))
     return results
 
 

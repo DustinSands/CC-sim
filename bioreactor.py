@@ -44,10 +44,10 @@ class agitator:
     else: raise ValueError('impeller not recognized!')
 
     
-    self.ungassed_power_coeff = self.power_number*Q(1000, 'kg/m**3')*self.diameter**5
+    self.ungassed_power_coeff = (self.power_number*Q(1000, 'kg/m**3')*self.diameter**5).simplified
     
   def ungassed_power(self, RPS):
-    return RPS**3*self.ungassed_power_coeff
+    return Q(RPS, '1/s')**3*self.ungassed_power_coeff
   
 
 class bioreactor:
@@ -62,21 +62,25 @@ class bioreactor:
                  diameter = Q(13, 'cm'),     
                  sparger_height = Q(2, 'cm'), # Height from bottom of vessel
                  sparger_pore_size = Q(20, 'um'),
+                 num_pores = 10000,
                  cell_separation_device = None,     # Perfusion only
                  head_pressure = Q(760, 'mmHg'),
                  ):
     self.volume = volume
+    self.working_volume = initial_components['liquid_volume']
     self.agitator = agitator
     self.CSA = diameter**2/4*math.pi
     self.diameter = diameter
     self.check_list = self.build_checklist()
     self.current_time = start_time
     self.sparger_pore_size = sparger_pore_size
+    self.sparger_num_pores = num_pores
     self.kla_func = self.create_kla_function()
     self.old = {}
     self.pressure = sparger_height/2*param.actual_cc_density*param.gravity+head_pressure
     self.mass = initial_components
     self.sparger_height = sparger_height
+
 
     
   def build_checklist(self):
@@ -103,7 +107,6 @@ class bioreactor:
   def check_and_update(self, actuation):
     if not actuation == self.old:
       self.old = actuation
-      self.working_volume += actuation['liquid_volume']
       # Is this in per hour or per minute?
       self.kla = self.kla_func(actuation['RPS'], actuation['gas_volume'], self.working_volume)
       self.gas_percentages = self.calc_gas_percentages(actuation)
@@ -137,7 +140,7 @@ class bioreactor:
                                self.volume) * param.resolution
       self.mass[component] -= cells['mass_transfer'][component]
     
-    self.volume += actuation['liquid_volume']
+    self.working_volume += actuation['liquid_volume']
     
     environment={'shear':self.mean_shear, 
                         'max_shear':self.max_shear,
@@ -157,19 +160,20 @@ class bioreactor:
     Investigation and Modeling of Gas-Liquid Mass Transfer in a Sparged and 
     Non-Sparged Continuous Stirred Tank Reactor with Potential Application in 
     Syngas Fermentation. Fermentation 2019, 5, 75."""
-    diam_ratio = self.agitator.diameter / self.diameter
+    diam_ratio = (self.agitator.diameter / self.diameter).simplified
     A = 5.3 * math.exp(-5.4*diam_ratio)
     B = 0.47 * diam_ratio**1.3
     C = 0.64 - 1.1 * diam_ratio
-    froude_coeff = self.agitator.diameter / Q(9.81, 'm/s**2')
-    velocity_coeff = 1/(math.pi * self.sparger_pore_size**2/4)
+    froude_coeff = (self.agitator.diameter / Q(9.81, 'm/s**2')).simplified
+    velocity_coeff = 1/(math.pi * self.sparger_pore_size**2/4*self.sparger_num_pores).simplified
       
     def kla_func(RPS, gas_flow, working_volume):
-      froude = froud_coeff*RPS
-      aeration = gas_flow / (RPS+self.imp_diam**3)
+      froude = (froude_coeff*(Q(RPS, '1/s'))**2)
+      aeration = (gas_flow / (Q(RPS,'1/s')*self.agitator.diameter**3)).simplified
       ungassed_power = self.agitator.ungassed_power(RPS)
-      lower_gassed_power = ungassed_power * (1-(B-A*viscosity)*froude**0.25*\
-                                             math.tanh(C*aeration))
+      lower_gassed_power = ungassed_power *\
+        (1-(B-A*param.viscosity/Q(1, 'Pa*s'))*froude**0.25*\
+        math.tanh(C*aeration))
       upper_gassed_power = (self.agitator.number - 1)* ungassed_power* \
         (1-(A+B*froude)*aeration**(C+0.04*froude))
       superficial_velocity = gas_flow * velocity_coeff
