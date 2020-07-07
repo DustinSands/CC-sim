@@ -126,6 +126,8 @@ class PID:
   
   Assumes constant sample interval.
   
+  Response is on scale of 0 to 100
+  
   response(% of max) = Kp * D + int(Ki * D) dt - Kd * d value/dt
   where D is (value - setpoint)
   """
@@ -155,25 +157,38 @@ class aeration:
   """aeration strategy.  Uses a PID to first add air to max air, then
   adds oxygen to max oxygen.
   """
-  def __init__(self, setpoint, max_air = Q(0.2, 'L/min'), 
+  def __init__(self, setpoint, 
+               min_air = Q(0.02, 'L/min'), 
+               max_air = Q(0.2, 'L/min'), 
                max_O2 = Q(0.1, 'L/min')):
     """max_air and max_O2 should be in volumetric flow rates."""
     self.PID = PID(0.1, Q(1/15, '1/min'), Q(3, 'min'), 
                    setpoint, 5)
-    self.actuation = [actuation.MFC('air'), actuation.MFC('O2'), actuation.agitator(300/60)]
+    self.actuation = [actuation.MFC('air'), actuation.MFC('O2'), actuation.agitator(Q(300/60., '1/s'))]
     self.max_air = max_air
     self.max_O2 = max_O2
+    self.min_air = min_air
     
   def step(self, obs, offline):
     PID_out = self.PID.step(obs['dO2'])
     if PID_out < 80:
-      self.actuation[0].set_point = PID_out/80 * self.max_air
+      self.actuation[0].set_point = PID_out/80 * (self.max_air-self.min_air)+self.min_air
       self.actuation[1].set_point =  Q(0,'L/min')
     else:
       self.actuation[0].set_point = self.max_air
       self.actuation[1].set_point = (PID_out-80)/20 * self.max_O2
     return {'aeration_PID':PID_out}
 
+class temperature:
+  def __init__(self, setpoint):
+    self.PID = PID(10, Q(1/15, '1/min'), Q(3, 'min'), 
+                   setpoint, 5)
+    self.actuation = [actuation.heating_jacket(Q(100, 'W'))]
+    
+  def step(self, obs, offline):
+    PID_out = self.PID.step(obs['dO2'])
+    self.actuation[0].set_point = PID_out
+    return {'heating_PID':PID_out}
   
 class wrapper:
   def __init__(self, control_setup):

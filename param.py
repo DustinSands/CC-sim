@@ -8,7 +8,7 @@ from quantities import Quantity as Q
 
 
 #The simulation resolution
-resolution = np.timedelta64(1, 'm')
+resolution = np.timedelta64(1, 's')
 
 
 # Same as simulation resolution, but in quantities package
@@ -38,6 +38,8 @@ gravity = Q(9.81, 'm/s**2')
 actual_cc_density = Q(980, 'g/L') #Assumed constant.  Can be deleted when calculated density encoded
 expected_cc_density = Q(1000, 'g/L')
 viscosity = Q(0.001, 'Pa*s')
+environment_temperature = 26
+volumetric_heat_capacity = Q(4180, 'J/L') # per K 
 
 # ERROR CONSTANTS
 instrumentation={
@@ -86,12 +88,12 @@ instrumentation={
   }
 
 cells = {
-  'component_A_production_rate':(Q(1, 'pg/ce/day')*q_res).simplified,
-  'extinction_coeff': 200,
-  'mass_transfer_rate': Q(1e-15, 'L/m**2/min'), # 8e-7 m**3 min, corresponds to 2/min
-  'O2_consumption':Q(5,'g/min/L'),
-  'glucose_consumption':Q(3e-11,'g/ce/hour'),
-  'aa_consumption':Q(5,'g/day/L'),
+  'component_A_production_rate':Q(1., 'pg/ce/day'),
+  'extinction_coeff': 200.,
+  'mass_transfer_rate': Q(1.e-15, 'L/m**2/min'), # 8e-7 m**3 min, corresponds to 2/min
+  'O2_consumption':Q(5.,'g/min/L'),
+  'glucose_consumption':Q(3.e-11,'g/hour'), #per cell
+  'aa_consumption':Q(5.,'g/day/L'),
   }
 
 actuation = {
@@ -113,7 +115,7 @@ actuation = {
 
 # Constants
 kla_ratio = {
-  'O2':1,
-  'CO2':0.95,
-  'CO':1.03,
+  'dO2':1,
+  'dCO2':0.95,
+  'dCO':1.03,
   }

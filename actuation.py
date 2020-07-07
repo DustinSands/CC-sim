@@ -107,7 +107,16 @@ class peristaltic():
     liquid_rate = self.systematic_error * self.set_point * self.broken_mult
     return self.source.dispense(liquid_rate)
 
-class agitator():
+class heating_jacket:
+  """Adds energy to bioreactor.  Doesn't break."""
+  def __init__(self, max_wattage = Q(100, 'W')):
+    self.max_wattage = max_wattage
+    self.set_point = 0
+    
+  def step(self):
+    return {'heat':self.set_point*self.max_wattage}
+    
+class agitator:
   """ Controls the motor for the agitator."""
   p = param.actuation['agitator']
   def __init__(self, RPS,
@@ -148,15 +157,16 @@ class wrapper:
       actuation[item] = Q(0., 'L/min')
     actuation['liquid_volume']=Q(0., 'L/min')
     actuation['gas_volume']=Q(0., 'L/min')
-    actuation['RPS'] = 0 
+    actuation['RPS'] = Q(0., '1/s') 
+    actuation['heat'] = Q(0., 'W')
     
     for item in self.actuation_list:
       components_added = item.step()
       for key, value in components_added.items():
-        print(key, actuation[key], value)
+
         actuation[key] += value
         
-    gas_volume = Q(0, 'L/min')
+    gas_volume = Q(0., 'L/min')
     for component in param.gas_components:
       actuation['gas_volume'] += actuation[component]
 

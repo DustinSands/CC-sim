@@ -128,7 +128,7 @@ class cell_wrapper:
     self.hour_countdown = np.timedelta64(1, 'h')/param.resolution
     self.dying_cells = Q(0., 'ce')
     self.dead_cells = Q(0., 'ce')
-    self.extinction_conversion = np.timedelta64(1, 'D') / param.resolution
+    self.extinction_conversion = np.timedelta64(1, 'D') / param.resolution*self.p['extinction_coeff']
     self.diameter = self.cp['growth_diameter']
     self.volume = math.pi/6*self.diameter**3
     self.growth_per_tick = (param.q_res/self.cp['growth_rate']).simplified*(
@@ -189,6 +189,8 @@ class cell_wrapper:
     Some cell death is delayed.  This is done by bucketizing the deaths by the 
     hour.  Once an hour we start killing the cells in the last bucket and
     create a new one.
+    
+    Extinction rate is roughly "what proportion of cells should die per day"
     """
     self.hour_countdown -= 1
     if self.hour_countdown <= 0:
@@ -201,10 +203,10 @@ class cell_wrapper:
       tolerance = condition + '_tolerance'
       # diff = max(0, abs(env[condition]-self.cp[condition])-self.cp[tolerance])
       diff = env[condition]-self.cp[condition]
-      extinction_rate += (math.exp((diff/self.cp[tolerance])**2)-1)/\
-        self.p['extinction_coeff']
+      extinction_rate += (math.exp((diff/self.cp[tolerance])**2)-1)
+    extinction_rate +=math.exp((1.6-limiting_ratio*1.6)**2)-1
     #Convert extinction rate from per day to per step
-    extinction_rate /= self.extinction_conversion
+    extinction_rate /= self.extinction_conversion/metabolism_rate
     #If death rate is low enough, the death is delayed.  Using a logistic
     #curve to calculate ratio
     death_ratio = 1/(1+math.exp(-20*(extinction_rate - 0.3)))
@@ -218,21 +220,61 @@ class cell_wrapper:
     Future update: include iron for biomass only."""
     metabolism_rate = self.cp['metabolism_rate']*0.19*math.exp(0.01458*env['temperature'])
 
-    aa_vol_consumption_rate = self.p['aa_consumption']*metabolism_rate
-    O2_vol_consumption_rate = self.p['O2_consumption']*metabolism_rate
-    glucose_consumption_rate = self.p['glucose_consumption']*metabolism_rate*Q(1, 'ce')
-    glucose_mass = self.concentration['glucose']*self.volume
-    limiting_ratio = min(glucose_mass/(mass_transfer['glucose']-glucose_consumption_rate),
-          self.concentration['amino_acids']/(mass_transfer['amino_acids']/self.volume-aa_vol_consumption_rate),
-          self.concentration['dO2']/(mass_transfer['dO2']/self.volume-O2_vol_consumption_rate),
-          param.q_res)
-    metabolic_scalar = metabolism_rate * limiting_ratio 
-    self.concentration['glucose'] -= metabolic_scalar*glucose_consumption_rate/self.volume
-    self.concentration['dO2'] -= metabolic_scalar*O2_vol_consumption_rate
-    self.concentration['dCO2'] += metabolic_scalar*O2_vol_consumption_rate
-    self.concentration['amino_acids'] -= metabolic_scalar*aa_vol_consumption_rate
-    IGG_production = metabolic_scalar*aa_vol_consumption_rate
-    self.calc_death(env, limiting_ratio, metabolism_rate)
+    # aa_vol_consumption_rate = self.p['aa_consumption']*metabolism_rate
+    # O2_vol_consumption_rate = self.p['O2_consumption']*metabolism_rate
+    # glucose_consumption_rate = self.p['glucose_consumption']*metabolism_rate*Q(1, 'ce')
+    # glucose_mass = self.concentration['glucose']*self.volume
+    # time_left = min(glucose_mass/(mass_transfer['glucose']-glucose_consumption_rate),
+    #       self.concentration['amino_acids']/(mass_transfer['amino_acids']/self.volume-aa_vol_consumption_rate),
+    #       self.concentration['dO2']/(mass_transfer['dO2']/self.volume-O2_vol_consumption_rate),
+    #       param.q_res)
+    # print(time_left,time_left*O2_vol_consumption_rate)
+    
+    
+    # Equations from solving differential eqs from mass balances
+    MT_coeff = math.pi*self.diameter**2*self.p['mass_transfer_rate']
+    time_coeff = 1-math.exp(-MT_coeff*param.q_res/self.volume)
+    limit_coeff = MT_coeff / time_coeff / metabolism_rate
+  
+    aa_limiting_rate = limit_coeff / (self.p['aa_consumption']*self.volume) *\
+      (self.concentration['amino_acids']*(1-time_coeff)+env['amino_acids']*time_coeff)
+    O2_limiting_rate = limit_coeff / (self.p['O2_consumption']*self.volume) *\
+      (self.concentration['dO2']*(1-time_coeff)+env['dO2']*time_coeff)
+    glucose_limiting_rate = limit_coeff / self.p['glucose_consumption'] *\
+      (self.concentration['glucose']*(1-time_coeff)+env['glucose']*time_coeff)
+      
+    rates = [aa_limiting_rate, O2_limiting_rate, glucose_limiting_rate]
+    # Find smallest rate > 0
+    limiting_rate = min([rate for rate in rates if rate > 0])
+    
+    aa_consumption_rate = \
+      limiting_rate * metabolism_rate * self.p['aa_consumption']*self.volume
+    O2_consumption_rate = \
+      limiting_rate * metabolism_rate * self.p['O2_consumption']*self.volume
+    glucose_consumption_rate = \
+      limiting_rate * metabolism_rate * self.p['glucose_consumption']
+      
+    final_aa = self.concentration['amino_acids']+time_coeff*\
+      (env['amino_acids']-self.concentration['amino_acids']-aa_consumption_rate/MT_coeff)
+    final_O2 = self.concentration['dO2']+time_coeff*\
+      (env['dO2']-self.concentration['dO2']-O2_consumption_rate/MT_coeff)
+    final_glucose = self.concentration['glucose']+time_coeff*\
+      (env['glucose']-self.concentration['glucose']-glucose_consumption_rate/MT_coeff)
+      
+    mass_transfer['amino_acids'] = aa_consumption_rate * param.q_res + \
+      final_aa - self.concentration['amino_acids']*self.volume
+    mass_transfer['dO2'] = O2_consumption_rate * param.q_res + \
+      final_O2 - self.concentration['dO2']*self.volume
+    mass_transfer['dCO2'] = -mass_transfer['dO2'] * self.cp['respiratory_quotient']
+    mass_transfer['glucose'] = glucose_consumption_rate * param.q_res + \
+      final_glucose - self.concentration['glucose']*self.volume
+      
+    self.concentration['amino_acids'] = final_aa
+    self.concentration['dO2'] = final_O2
+    self.concentration['glucose'] = final_glucose
+
+    IGG_production = aa_consumption_rate
+    self.calc_death(env, (time_left/param.q_res).simplified, metabolism_rate)
     self.calc_growth(env, metabolism_rate)
     return IGG_production
     
@@ -242,7 +284,6 @@ class cell_wrapper:
     0 = in range
     1 = out of range
     """
-    
     for variable in ['component_A', 'component_B', 'component_C', 'component_D', 
                      'shear']:
       sensitivity = self.cp[variable+'_sensitivity']
@@ -250,9 +291,9 @@ class cell_wrapper:
       self.out_of_range[variable] = 1/(1+math.exp((
         sensitivity*(env[variable]-1/sensitivity*3-tolerance)).simplified))
     for variable in ['pH', 'dO2', 'osmo', 'temperature']:
-      tolerance = variable+'_tolerance'
+      tolerance = self.cp[variable+'_tolerance']
       self.out_of_range[variable] = \
-        math.exp((env[variable]-self.cp[variable])**2/self.cp[tolerance]**2)
+        math.exp((env[variable]-self.cp[variable])**2/tolerance**2)
     
   def step(self, env):
     cells = {}
@@ -282,13 +323,13 @@ class cell_wrapper:
       self.out_of_range['pH']*0.4
     basic_fraction = self.out_of_range['component_B']*0.25+self.out_of_range['dO2']*0.5+\
       self.out_of_range['temperature']*-0.1
-    self.concentration['IGG_a'] = acidic_fraction * IGG_production
-    self.concentration['IGG_b'] = basic_fraction * IGG_production
-    self.concentration['IGG_n'] = (1-basic_fraction - acidic_fraction) * IGG_production
+    self.concentration['IGG_a'] += acidic_fraction * IGG_production
+    self.concentration['IGG_b'] += basic_fraction * IGG_production
+    self.concentration['IGG_n'] += (1-basic_fraction - acidic_fraction) * IGG_production
     
     
     #shock - not implemented
-    cells['mass_transfer'] = {component:value*self.viable_cells for 
+    cells['mass_transfer'] = {component:value*self.viable_cells/Q(1, 'ce') for 
                               component, value in mass_transfer.items()}
     cells['mass_transfer']['component_A'] = -self.viable_cells * self.p['component_A_production_rate']
 
