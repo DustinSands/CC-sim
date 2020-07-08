@@ -56,3 +56,8 @@ https://folk.ntnu.no/skoge/prost/proceedings/dycops2007-and-cab2007/CAB/Monday/E
 
 OUR and CO2UR
 https://aiche.onlinelibrary.wiley.com/doi/abs/10.1002/btpr.646
+
+Chemically Defined Media:
+  Pan X, Streefland M, Dalm C, Wijffels RH, Martens DE. Selection of chemically 
+  defined media for CHO cell fed-batch culture processes. Cytotechnology. 
+  2017;69(1):39-56. doi:10.1007/s10616-016-0036-5

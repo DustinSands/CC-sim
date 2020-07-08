@@ -10,6 +10,7 @@ to leave room for heterogeneity.
 
 """
 import math
+import pdb
 
 from quantities import Quantity as Q
 
@@ -17,8 +18,8 @@ import param, tests, main
 
 """Defines solubility equation for components that vary with temperature."""
 solubility = {
-  'dO2': lambda t: Q(0.0005 - t*0.00000475, 'g/L/kPa'),
-  'dCO2': lambda t: Q(0.021 - t*0.000275, 'g/L/kPa')
+  'dO2': lambda t: Q(float(0.0005 - t*0.00000475), 'g/L/kPa'),
+  'dCO2': lambda t: Q(float(0.021 - t*0.000275), 'g/L/kPa')
   }
 
 
@@ -57,6 +58,7 @@ class bioreactor:
   Assumed to be a perfectly cylindrical vessel for volume calculations."""
   def __init__(self, start_time,
                  initial_components,
+                 seed_volume,
                  initial_temperature,
                  volume = Q(3, 'L'),
                  agitator = agitator(),
@@ -69,34 +71,24 @@ class bioreactor:
                  heat_transfer_coeff = Q(50, 'W/m**2'), #per degree (not supported)
                  ):
     self.volume = volume
-    self.working_volume = initial_components['liquid_volume']
+    self.working_volume = seed_volume
     self.agitator = agitator
     self.CSA = diameter**2/4*math.pi
     self.diameter = diameter
-    self.check_list = self.build_checklist()
     self.current_time = start_time
     self.sparger_pore_size = sparger_pore_size
     # self.sparger_num_pores = num_pores
     self.kla_func = self.create_kla_function()
     self.old = {}
     self.pressure = (sparger_height/2*param.actual_cc_density*param.gravity+head_pressure).simplified
-    self.mass = initial_components
+    self.mass = {component:Q(0., 'g') for component in param.liquid_components}
+    self.mass.update(initial_components)
     self.sparger_height = sparger_height
     self.temperature = initial_temperature
     self.overall_heat_transfer_coeff = heat_transfer_coeff*\
       (2*self.CSA+self.volume/self.CSA*math.pi*self.diameter)   #external area
 
 
-    
-  def build_checklist(self):
-    """The checklist for items that affect:
-      gas percentages
-      kla (RPS, gas flow, volume)
-      working volume
-      """
-    checklist = ['liquid_volume', '']
-      
-    return checklist
     
   def update_shear(self, RPS):
     """Updates the shear rates with new RPS.
@@ -111,7 +103,8 @@ class bioreactor:
     self.max_shear = self.mean_shear / 4.2 * 9.7
   
   def check_and_update(self, actuation):
-    if not actuation == self.old:
+    self.current_time += param.resolution
+    if not (actuation == self.old and actuation['liquid_volume'] == Q(0, 'L/min')):
       self.old = actuation
       # Is this in per hour or per minute?
       self.kla = self.kla_func(actuation['RPS'], actuation['gas_volume'], self.working_volume)
@@ -132,41 +125,58 @@ class bioreactor:
   def step(self, actuation, cells):
     """Calculate environmental changes."""
     self.check_and_update(actuation)
-    self.current_time += param.resolution
-    cell_fraction = (cells['total_cells']*cells['volume']/Q(1, 'ce')/self.volume).simplified
+    cell_fraction = (cells['total_cells']*cells['volume']/Q(1, 'ce')/self.working_volume).simplified
 
     for component in param.liquid_components:
       if component[1:] in param.gas_components:
         C_star = self.gas_percentages[component]*self.pressure*solubility[component](self.temperature)
         
         transfer_rate = (self.kla*param.kla_ratio[component])*\
-          (C_star - self.mass[component]/(self.volume*(1-cell_fraction)))
-        transfer_rate = (transfer_rate*self.volume).simplified
+          (C_star - self.mass[component]/(self.working_volume*(1-cell_fraction)))
+        transfer_rate = (transfer_rate*self.working_volume).simplified
       else: 
         transfer_rate = actuation[component]
-      print('BR', component, transfer_rate, self.mass[component])
+      # print('BR', component, transfer_rate, self.mass[component])
       self.mass[component] += (transfer_rate - cells['mass_transfer'][component]) * param.q_res
     self.working_volume += actuation['liquid_volume']*param.q_res
+    
     
     #Temperature
     heat_transfer = actuation['heat'] + \
       (param.environment_temperature-self.temperature)*\
         self.overall_heat_transfer_coeff
-    self.temperature += heat_transfer*param.q_res /\
-      (self.working_volume*param.volumetric_heat_capacity)
+    self.temperature += (heat_transfer*param.q_res /\
+      (self.working_volume*param.volumetric_heat_capacity)).simplified
+    
+    osmo = (self.total_moles()/Q(1, 'mmol/L')/\
+            (self.working_volume*(1-cell_fraction))).simplified
     
     #Build output
     environment={'shear':self.mean_shear, 
                  'max_shear':self.max_shear,
                  'volume':self.working_volume,
-                        
+                 'mOsm':osmo,
+                 'pH': self.pH(),
+                 'temperature':self.temperature,
+                 'time': self.current_time
                         }
     for component in param.liquid_components:
       environment.update({component:self.mass[component]/self.working_volume})
       
-    environment['pH'] = 7.3 - self.mass['dCO2']/Q(1, 'g/L')/self.volume
     return environment
     
+  def total_moles(self):
+    total = Q(0., 'mmol')
+    for component in self.mass:
+      total += self.mass[component]/param.molecular_weight[component]
+      if component in ['NaCL', 'KCl']:  #Counts twice
+        total += self.mass[component]/param.molecular_weight[component]
+    return total
+  
+  def pH(self):
+    """Calculates pH of system.  Needs future update."""
+    return 7.3 - self.mass['dCO2']/Q(1, 'g/L')/self.working_volume
+  
   def create_kla_function(self):
     """Calculate and return a function for oxygen transfer rate.
     

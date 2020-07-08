@@ -5,6 +5,7 @@ Created on Mon Jun  8 18:30:40 2020
 @author: Racehorse
 """
 import random
+import pdb
 
 from quantities import Quantity as Q
 import numpy as np
@@ -37,12 +38,14 @@ class feed_strategy:
     self.VCD = self.seeding_density
     self.last_VCD = target_seeding_density
     self.last_mass = self.initial_volume*param.expected_cc_density
+    self.old_volume = self.initial_volume
     self.interval = sample_interval
     self.sp = set_point
     self.cpp = cpp
   
   def step(self, obs, offline):
     #Check if there is a new reading for the control parameter
+    metric = {}
     if offline:
       metric = self.update_control(obs)
     return metric
@@ -51,7 +54,7 @@ class fed_batch_feed(feed_strategy):
   """Fed-batch reactor.  Adds a constant amount of specified feed in order to 
   adjust cpp to setpoint at next sample interval.
   
-  Assumes constant:
+  Assumes mostly constant:
     cell-specific consumption rate (since last obs)
     
     Volume
@@ -87,21 +90,29 @@ class fed_batch_feed(feed_strategy):
   #   self.actuation.set_point = self.addition_rate
     
   def update_control(self, obs):
+    volume = obs['mass']/param.expected_cc_density
     if not self.cpp in obs:
       raise ValueError('CPP not included in assays!')
     time_since_last_obs = Q((obs['time']-self.last_time)/np.timedelta64(1, 'm'), 'min')
     average_VCD = (obs['VCD']+self.last_VCD)/2
-    new_mass = obs[self.cpp]*obs['mass']/param.expected_cc_density
-    consumption_rate = (self.addition_rate - \
-      (new_mass-self.last_mass)/time_since_last_obs)/average_VCD
+    average_volume = (self.last_volume+volume)/2
+    # CSCR = (self.addition_rate - \
+    #   (new_mass - self.last_mass)/time_since_last_obs)/average_VCD/self.volume
+    CSCR = (obs[self.cpp]*volume - self.last_concentration*self.last_volume - \
+            self.addition_rate * time_since_last_obs) /\
+      (average_VCD * average_volume * time_since_last_obs)
     self.predicted_VCD = 2*obs['VCD']-average_VCD #Maybe update this later....
-    self.addition_rate = (self.sp - obs[self.cpp])*obs['mass']/param.expected_cc_density/\
+    self.addition_rate = (self.sp - obs[self.cpp])*self.volume/\
       self.interval +\
-      self.predicted_VCD*consumption_rate
-    self.last_mass = new_mass
+      self.predicted_VCD*CSCR*self.volume
+      
     self.last_VCD = obs['VCD']
     self.last_time = obs['time']
+    self.last_volume = volume
+    self.last_concentration = obs[self.cpp]
+    
     self.actuation[0].set_point = self.addition_rate / self.feed_mixture[self.cpp]
+    pdb.set_trace()
     return {'glucose_solution':self.actuation[0].set_point}
 
 class dynamic_perfusion_feed(feed_strategy):
@@ -186,7 +197,7 @@ class temperature:
     self.actuation = [actuation.heating_jacket(Q(100, 'W'))]
     
   def step(self, obs, offline):
-    PID_out = self.PID.step(obs['dO2'])
+    PID_out = self.PID.step(obs['temperature'])
     self.actuation[0].set_point = PID_out
     return {'heating_PID':PID_out}
   

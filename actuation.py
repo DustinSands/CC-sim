@@ -114,7 +114,7 @@ class heating_jacket:
     self.set_point = 0
     
   def step(self):
-    return {'heat':self.set_point*self.max_wattage}
+    return {'heat':self.set_point/100*self.max_wattage}
     
 class agitator:
   """ Controls the motor for the agitator."""
@@ -163,13 +163,11 @@ class wrapper:
     for item in self.actuation_list:
       components_added = item.step()
       for key, value in components_added.items():
-
         actuation[key] += value
         
     gas_volume = Q(0., 'L/min')
     for component in param.gas_components:
       actuation['gas_volume'] += actuation[component]
-
     return actuation
     # for component in param.liquid_components:
     #   actuation.update({component:    })

@@ -8,11 +8,11 @@ from quantities import Quantity as Q
 
 
 #The simulation resolution
-resolution = np.timedelta64(1, 's')
+resolution = np.timedelta64(1, 'm')
 
 
 # Same as simulation resolution, but in quantities package
-q_intermediate = resolution / np.timedelta64(1, 's')
+q_intermediate = resolution / np.timedelta64(1, 'm')
 q_res = Q(q_intermediate, 's').simplified
 
 cells = q.unitquantity.IrreducibleUnit('cells', symbol = 'ce')
@@ -26,13 +26,38 @@ q.HCD = q.CompoundUnit('e6c/ml')
 # cells = q.unitquantity.IrreducibleUnit('cell', symbol = 'cell')
 # cells = q.UnitQuantity('e5 cells', cells*1e5, symbol='e5c')
 
-liquid_components = ['dCO2', 'dO2', 'glucose', 'H2CO3', 
-                      'iron', 'LDH', 'lactate', 'amino_acids', 'component_A',
-                      'component_B', 'component_C', 'component_D', 'IGG_a',
-                      'IGG_b', 'IGG_n']
-gas_components = ['CO2', 'O2', 'air']
 cell_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'dCO2', 'IGG_a',
-                      'IGG_b', 'IGG_n']
+                      'IGG_b', 'IGG_n', 'component_A', 'sodium']
+liquid_components = [*cell_components, 'H2CO3', 'LDH', 'lactate', 
+                      'component_B', 'component_C', 'component_D', ]
+gas_components = ['CO2', 'O2', 'air']
+
+molecular_weight = {
+  'glucose':Q(180.156, 'g/mol'),
+  'dO2':Q(32., 'g/mol'),
+  'dCO2':Q(44.01, 'g/mol'),
+  'acetic_acid':Q(60.052, 'g/mol'),
+  'amino_acids':Q(137., 'g/mol'),
+  'butyric_acid':Q(88., 'g/mol'),
+  'citric_acid':Q(192.12, 'g/mol'),
+  'formic_acid':Q(46.03, 'g/mol'),
+  'isovaleric_acid':Q(102.13, 'g/mol'),
+  'lactate':Q(90.08, 'g/mol'),
+  'adenine':Q(135.13, 'g/mol'),
+  'iron':Q(200., 'g/mol'),   #forms of iron are generally in the 150-250 g/mol range
+  'LDH':Q(140., 'kg/mol'),
+  'IGG_a':Q(150., 'kg/mol'),
+  'IGG_b':Q(150., 'kg/mol'),
+  'IGG_n':Q(150., 'kg/mol'),
+  'NaCl':Q(58.44, 'g/mol'),
+  'KCl':Q(74.553, 'g/mol'),
+  'component_A':Q(100, 'kg/mol'),
+  'component_B':Q(50, 'kg/mol'),
+  'component_C':Q(500, 'g/mol'),
+  'component_D':Q(200, 'g/mol'),
+  'sodium':Q(22.99,'g/mol'),
+  'H2CO3':Q(62.03, 'g/mol'),
+  }
 
 gravity = Q(9.81, 'm/s**2')
 actual_cc_density = Q(980, 'g/L') #Assumed constant.  Can be deleted when calculated density encoded
@@ -90,10 +115,10 @@ instrumentation={
 cells = {
   'component_A_production_rate':Q(1., 'pg/ce/day'),
   'extinction_coeff': 200.,
-  'mass_transfer_rate': Q(1.e-15, 'L/m**2/min'), # 8e-7 m**3 min, corresponds to 2/min
+  'mass_transfer_rate': Q(8.5e7, 'm/s'), # 8e-7 m**3 min, corresponds to 2/min
   'O2_consumption':Q(5.,'g/min/L'),
   'glucose_consumption':Q(3.e-11,'g/hour'), #per cell
-  'aa_consumption':Q(5.,'g/day/L'),
+  'aa_consumption':Q(150.,'g/day/L'),
   }
 
 actuation = {
