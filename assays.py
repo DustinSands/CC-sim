@@ -68,7 +68,7 @@ class O2_probe(probe):
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
     random_error = random.gauss(0, self.p['random_CV'])
-    percent_DO = environment['dO2']/Q(0.000067, 'g/L')
+    percent_DO = (environment['dO2']/Q(0.0021, 'mM')).simplified
     value = percent_DO*(1+drift_error+random_error)+self.sys_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
     return {'dO2': self.value}
@@ -152,6 +152,7 @@ class BGA(machine):
     """For BGA usage as part of offline assays."""
     O2 = self.read_O2_value(environment['dO2'])
     pH = self.read_pH_value(environment['pH'])
+    # Mole fraction is ~0.9756 for CO2 of total inorganic carbon
     CO2 = self.read_CO2_value(environment['dCO2'])
     return {'BGA_dO2': O2, 'BGA_pH': pH, 'BGA_dCO2': CO2}
 
@@ -173,7 +174,7 @@ class bioHT(machine):
     if assay == 'IGG':
       value = env['IGG_a']+env['IGG_b']+env['IGG_n']
     else: value = env[assay]
-    return {assay: value*self.error_CV(assay)}
+    return {assay: value*self.error_CV(assay)/param.molecular_weight[assay]}
   
     # return {assay:value(environment[assay],assay) for assay in self.assay_list}
 

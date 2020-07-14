@@ -18,8 +18,8 @@ import param, tests, main
 
 """Defines solubility equation for components that vary with temperature."""
 solubility = {
-  'dO2': lambda t: Q(float(0.0005 - t*0.00000475), 'g/L/kPa'),
-  'dCO2': lambda t: Q(float(0.021 - t*0.000275), 'g/L/kPa')
+  'dO2': lambda t: Q(1.58 - float(t)*0.015, 'mM/atm'),
+  'dCO2': lambda t: Q(48.39 - float(t)*0.61, 'mM/atm')
   }
 
 
@@ -81,8 +81,8 @@ class bioreactor:
     self.kla_func = self.create_kla_function()
     self.old = {}
     self.pressure = (sparger_height/2*param.actual_cc_density*param.gravity+head_pressure).simplified
-    self.mass = {component:Q(0., 'g') for component in param.liquid_components}
-    self.mass.update(initial_components)
+    self.mole = {component:Q(0., 'millimole') for component in param.liquid_components}
+    self.mole.update(initial_components)
     self.sparger_height = sparger_height
     self.temperature = initial_temperature
     self.overall_heat_transfer_coeff = heat_transfer_coeff*\
@@ -120,36 +120,44 @@ class bioreactor:
       percent['d'+component] = actuation[component]/total
     # Assume N2 is irrelevant
     percent['dO2'] += percent['dair']*0.21
+    percent['dCO2'] += percent['dair']*0.00045
     return percent
     
   def step(self, actuation, cells):
     """Calculate environmental changes."""
     self.check_and_update(actuation)
     cell_fraction = (cells['total_cells']*cells['volume']/Q(1, 'ce')/self.working_volume).simplified
+    if cell_fraction > 1:
+      print('Wayyyyy too many cells')
+
 
     for component in param.liquid_components:
       if component[1:] in param.gas_components:
         C_star = self.gas_percentages[component]*self.pressure*solubility[component](self.temperature)
-        
-        transfer_rate = (self.kla*param.kla_ratio[component])*\
-          (C_star - self.mass[component]/(self.working_volume*(1-cell_fraction)))
-        transfer_rate = (transfer_rate*self.working_volume).simplified
+        kLa = self.kla*param.kla_ratio[component]
+        transfer_coeff = math.exp((-kLa*param.q_res).simplified)
+        # if component == 'dCO2':
+        #   pdb.set_trace()
+        self.mole[component] = transfer_coeff*self.mole[component] + (1-transfer_coeff)*\
+          (C_star*self.working_volume - cells['mass_transfer'][component]/kLa)
       else: 
         transfer_rate = actuation[component]
-      # print('BR', component, transfer_rate, self.mass[component])
-      self.mass[component] += (transfer_rate - cells['mass_transfer'][component]) * param.q_res
+        # print('BR', component, transfer_rate, self.mole[component])
+        self.mole[component] += (transfer_rate + cells['mass_transfer'][component]) * param.q_res
     self.working_volume += actuation['liquid_volume']*param.q_res
     
     
     #Temperature
+
     heat_transfer = actuation['heat'] + \
       (param.environment_temperature-self.temperature)*\
         self.overall_heat_transfer_coeff
     self.temperature += (heat_transfer*param.q_res /\
       (self.working_volume*param.volumetric_heat_capacity)).simplified
+
     
-    osmo = (self.total_moles()/Q(1, 'mmol/L')/\
-            (self.working_volume*(1-cell_fraction))).simplified
+    osmo = float((self.total_moles()/\
+            (self.working_volume*(1-cell_fraction))).simplified)
     
     #Build output
     environment={'shear':self.mean_shear, 
@@ -161,30 +169,32 @@ class bioreactor:
                  'time': self.current_time
                         }
     for component in param.liquid_components:
-      environment.update({component:self.mass[component]/self.working_volume})
+      environment.update({component:self.mole[component]/self.working_volume})
       
     return environment
     
   def total_moles(self):
     total = Q(0., 'mmol')
-    for component in self.mass:
-      total += self.mass[component]/param.molecular_weight[component]
-      if component in ['NaCL', 'KCl']:  #Counts twice
-        total += self.mass[component]/param.molecular_weight[component]
+    for component in self.mole:
+      total += self.mole[component]
     return total
   
   def pH(self):
-    """Calculates pH of system.  Needs future update."""
-    return 7.3 - self.mass['dCO2']/Q(1, 'g/L')/self.working_volume
+    """Calculates pH of system.  Uses Henderson–Hasselbalch equation for bicarb
+    (pKa = 6.36)"""
+    
+    positive_charge = sum([self.mole[species]/self.working_volume/Q(1, 'M')
+                           for species in self.mole if species in param.positively_charged])
+    negative_charge = sum([self.mole[species]/self.working_volume/Q(1, 'M')
+                           for species in self.mole if species in param.negatively_charged])
+    net_charge = positive_charge - negative_charge
+    pH = -math.log10(-net_charge/2+math.sqrt((net_charge/2)**2+\
+      10**-14+10**-6.36*1.0017*self.mole['dCO2']/self.working_volume/Q(1, 'M')))
+    return pH
   
   def create_kla_function(self):
     """Calculate and return a function for oxygen transfer rate.
-    
-    Equations used based on: 
-    Liu, K.; Phillips, J.R.; Sun, X.; Mohammad, S.; Huhnke, R.L.; Atiyeh, H.K. 
-    Investigation and Modeling of Gas-Liquid Mass Transfer in a Sparged and 
-    Non-Sparged Continuous Stirred Tank Reactor with Potential Application in 
-    Syngas Fermentation. Fermentation 2019, 5, 75."""
+    """
     diam_ratio = (self.agitator.diameter / self.diameter).simplified
     A = 5.3 * math.exp(-5.4*diam_ratio)
     B = 0.47 * diam_ratio**1.3

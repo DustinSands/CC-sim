@@ -18,11 +18,11 @@ class mixture:
   p2 = param.actuation['mixtures']
   def __init__(self, mixture_components, reservoir_size):
     """mixture_components:
-      dict of component along with target concentration
+      dict of component along with target concentration (g/L)
     """
     if reservoir_size ==None:
       reservoir_size = Q(1., 'L')
-    self.concentration = {}
+    self.molarity = {}
     self.target_concentrations = mixture_components
     self.size = reservoir_size
     self.replace_source()
@@ -32,8 +32,8 @@ class mixture:
     self.remaining -= liquid_rate*param.q_res
     if self.remaining < 0:    #Update at some point to happen during offline assays?
       self.replace_source()
-    for component, concentration in self.concentration.items():
-      output[component] = concentration*liquid_rate
+    for component, molarity in self.molarity.items():
+      output[component] = molarity*liquid_rate
     output['liquid_volume'] = liquid_rate
     return output
     
@@ -41,7 +41,8 @@ class mixture:
     """Generates new mixture with fresh errors."""
     for component, concentration in self.target_concentrations.items():
       error = random.gauss(0, self.p2['component_CV'])
-      self.concentration[component] = concentration*(1+error)
+      self.molarity[component] = \
+        concentration/param.molecular_weight[component]*(1+error)
     self.remaining = self.size
       
     
@@ -87,7 +88,7 @@ class peristaltic():
                error_CV = p['systematic_error_CV'], 
                break_chance = p['break_chance']):
     """mixture_components is passed to mixture.  Should be dict of target
-    concentrations of the mixture.
+    molarities of the mixture.
     
     source_size affects how often it is changed out with a new batch (new errors)
     """
@@ -122,11 +123,7 @@ class agitator:
   def __init__(self, RPS,
                error_CV = p['systematic_error_CV'], 
                break_chance = p['break_chance']):
-    """mixture_components is passed to mixture.  Should be dict of target
-    concentrations of the mixture.
-    
-    source_size affects how often it is changed out with a new batch (new errors)
-    """
+
     self.systematic_error = random.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
@@ -152,7 +149,7 @@ class wrapper:
   def step(self):
     actuation = {}
     for item in param.liquid_components:
-      actuation[item]=Q(0., 'g/min')
+      actuation[item]=Q(0., 'mol/min')
     for item in param.gas_components:
       actuation[item] = Q(0., 'L/min')
     actuation['liquid_volume']=Q(0., 'L/min')

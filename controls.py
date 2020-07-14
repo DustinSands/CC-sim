@@ -10,7 +10,7 @@ import pdb
 from quantities import Quantity as Q
 import numpy as np
 
-import tests, actuation, param
+import tests, actuation, param, main
 
 
 
@@ -37,11 +37,11 @@ class feed_strategy:
     self.seed_time = initial_time
     self.VCD = self.seeding_density
     self.last_VCD = target_seeding_density
-    self.last_mass = self.initial_volume*param.expected_cc_density
-    self.old_volume = self.initial_volume
+    self.last_volume = self.initial_volume
     self.interval = sample_interval
     self.sp = set_point
     self.cpp = cpp
+    self.ignore_first = 0
   
   def step(self, obs, offline):
     #Check if there is a new reading for the control parameter
@@ -50,7 +50,7 @@ class feed_strategy:
       metric = self.update_control(obs)
     return metric
   
-class fed_batch_feed(feed_strategy):
+class basic_fed_batch_feed(feed_strategy):
   """Fed-batch reactor.  Adds a constant amount of specified feed in order to 
   adjust cpp to setpoint at next sample interval.
   
@@ -91,28 +91,31 @@ class fed_batch_feed(feed_strategy):
     
   def update_control(self, obs):
     volume = obs['mass']/param.expected_cc_density
-    if not self.cpp in obs:
-      raise ValueError('CPP not included in assays!')
-    time_since_last_obs = Q((obs['time']-self.last_time)/np.timedelta64(1, 'm'), 'min')
-    average_VCD = (obs['VCD']+self.last_VCD)/2
-    average_volume = (self.last_volume+volume)/2
-    # CSCR = (self.addition_rate - \
-    #   (new_mass - self.last_mass)/time_since_last_obs)/average_VCD/self.volume
-    CSCR = (obs[self.cpp]*volume - self.last_concentration*self.last_volume - \
-            self.addition_rate * time_since_last_obs) /\
-      (average_VCD * average_volume * time_since_last_obs)
-    self.predicted_VCD = 2*obs['VCD']-average_VCD #Maybe update this later....
-    self.addition_rate = (self.sp - obs[self.cpp])*self.volume/\
-      self.interval +\
-      self.predicted_VCD*CSCR*self.volume
-      
+    if self.ignore_first:
+      if not self.cpp in obs:
+        raise ValueError('CPP not included in assays!')
+      time_since_last_obs = Q((obs['time']-self.last_time)/np.timedelta64(1, 'm'), 'min')
+      average_VCD = (obs['VCD']+self.last_VCD)/2
+      average_volume = (self.last_volume+volume)/2
+      # CSCR = (self.addition_rate - \
+      #   (new_mass - self.last_mass)/time_since_last_obs)/average_VCD/self.volume
+      CSCR = (obs[self.cpp]*volume - self.last_concentration*self.last_volume - \
+              self.addition_rate * time_since_last_obs) /\
+        (average_VCD * average_volume * time_since_last_obs)
+      predicted_VCD = 2*obs['VCD']-average_VCD #Maybe update this later....
+      predicted_volume = 2*volume - average_volume
+      self.addition_rate = (self.sp*predicted_volume - obs[self.cpp]*volume)/\
+        self.interval +\
+        predicted_VCD*CSCR*predicted_volume
+      if self.addition_rate < 0:
+        self.addition_rate = Q(0, 'g/min')
+
+    self.actuation[0].set_point = self.addition_rate / self.feed_mixture[self.cpp]
     self.last_VCD = obs['VCD']
     self.last_time = obs['time']
     self.last_volume = volume
     self.last_concentration = obs[self.cpp]
-    
-    self.actuation[0].set_point = self.addition_rate / self.feed_mixture[self.cpp]
-    pdb.set_trace()
+    self.ignore_first = 1
     return {'glucose_solution':self.actuation[0].set_point}
 
 class dynamic_perfusion_feed(feed_strategy):
@@ -150,15 +153,16 @@ class PID:
     self.error_int = initial_value
     self.sp = set_point
     self.deriv = 0
-    self.last_value = 60
+    self.last_value = set_point
     
   def step(self, value):
-    D = self.sp - value
+    D = (self.sp - value)
     self.error_int += self.ki*D
     self.deriv = (1-self.alpha) * self.deriv + self.alpha * (value - self.last_value)
     self.last_value = value
     response = self.kp * D + self.error_int - self.deriv*self.kd
-    if not 0 <= response <= 100:
+    # print(self.kp * D, self.error_int, -self.deriv*self.kd)
+    if not (0 <= response <= 100):
       self.error_int -= self.ki*D     #Undo int error if not within range to prevent windup
       if response < 0: response = 0
       else: response = 100    
@@ -169,7 +173,7 @@ class aeration:
   adds oxygen to max oxygen.
   """
   def __init__(self, setpoint, 
-               min_air = Q(0.02, 'L/min'), 
+               min_air = Q(0.05, 'L/min'), 
                max_air = Q(0.2, 'L/min'), 
                max_O2 = Q(0.1, 'L/min')):
     """max_air and max_O2 should be in volumetric flow rates."""
@@ -179,6 +183,8 @@ class aeration:
     self.max_air = max_air
     self.max_O2 = max_O2
     self.min_air = min_air
+    self.sp = setpoint
+
     
   def step(self, obs, offline):
     PID_out = self.PID.step(obs['dO2'])
@@ -190,10 +196,29 @@ class aeration:
       self.actuation[1].set_point = (PID_out-80)/20 * self.max_O2
     return {'aeration_PID':PID_out}
 
+class pH:
+  """CO2 Aeration control strategy to control pH within set range."""
+  def __init__(self, max_pH, 
+               min_CO2 = Q(0, 'L/min'), 
+               max_CO2 = Q(0.1, 'L/min'),):
+    """max_air and max_O2 should be in volumetric flow rates."""
+    self.PID = PID(-3, -Q(5, '1/min'), -Q(2, 'min'), 
+                   max_pH, 5)
+    self.actuation = [actuation.MFC('CO2')]
+    self.max_CO2 = max_CO2
+    self.min_CO2 = min_CO2
+    self.sp = max_pH
+
+    
+  def step(self, obs, offline):
+    PID_out = self.PID.step(obs['pH'])
+    self.actuation[0].set_point = PID_out/100 * (self.max_CO2-self.min_CO2)+self.min_CO2
+    return {'pH_PID':PID_out}
+
 class temperature:
   def __init__(self, setpoint):
-    self.PID = PID(10, Q(1/15, '1/min'), Q(3, 'min'), 
-                   setpoint, 5)
+    self.PID = PID(10, Q(1, '1/min'), Q(3, 'min'), 
+                   setpoint, 50)
     self.actuation = [actuation.heating_jacket(Q(100, 'W'))]
     
   def step(self, obs, offline):
@@ -225,4 +250,5 @@ class wrapper:
 
 
 if __name__ == '__main__':
+  main.run_sim()
   tests.controls_tests()

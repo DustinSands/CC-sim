@@ -10,6 +10,7 @@ Created on Mon Jun 15 14:10:00 2020
 
 import random
 import math
+import pdb
 
 import numpy as np
 from quantities import Quantity as Q
@@ -19,7 +20,7 @@ from matplotlib import pyplot as plt
 import actuation, assays, cell_sim, controls, bioreactor, param
 
 example_media = {
-           #  'dCO2':Q(, 'g/L'), 
+            'NaHCO3':Q(20., 'mM'), 
             'dO2':Q(0.21, 'mM'), 
            # 'H2CO3':Q(, 'g/L'), 
            # 'iron':Q(, 'g/L'), 
@@ -33,9 +34,56 @@ example_media = {
            'formic_acid':Q(7.6, 'mM'),
            'isovaleric_acid':Q(1.53, 'mM'),
            'lactate':Q(4.99, 'mM'),
-           'adenine':Q(0.68, 'mM')}
+           'adenine':Q(0.68, 'mM'),
+           'NaCl':Q(50., 'mM'),
+           'KCl':Q(70., 'mM')}
 
+def create_media_mass(media_definition, volume):
+  
 
+  media = {component:Q(0., 'g') for component in param.liquid_components}
+  
+  for component, molarity in media_definition.items():
+    #If component dissociates, add species separately
+    if component =='NaHCO3':
+      #HCO3 is in equilibrium with CO2 and pH.  Charge is accounted for in Na
+      component = ['Na', 'dCO2']
+    elif component == 'NaCl':
+      component = ['Na', 'Cl']
+    elif component == 'KCl':
+      component = ['K', 'Cl']
+    else: component = [component]
+    
+    for species in component:
+      if species in param.liquid_components:
+        media[species] += \
+          (param.molecular_weight[species]*molarity*volume).simplified
+        
+  return media
+
+def create_media(media_definition, volume):
+  
+
+  media = {component:Q(0., 'mol') for component in param.liquid_components}
+  
+  for component, molarity in media_definition.items():
+    #If component dissociates, add species separately
+    if component =='NaHCO3':
+      #HCO3 is in equilibrium with CO2 and pH.  Charge is accounted for in Na
+      component = ['Na', 'dCO2']
+    elif component == 'NaCl':
+      component = ['Na', 'Cl']
+    elif component == 'KCl':
+      component = ['K', 'Cl']
+    else: component = [component]
+    
+    for species in component:
+      if species in param.liquid_components:
+        media[species] += \
+          (molarity*volume).simplified
+        
+  return media
+        
 
 def create_config(num_experiments):
   start_time = np.datetime64('2020-01-01')
@@ -57,15 +105,13 @@ def create_config(num_experiments):
                    'target_seeding_density':Q(1, 'e5c/ml')}
   aeration_setup = {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
                'max_O2':Q(0.1, 'L/min')}
-  control_setup = [(controls.fed_batch_feed,[],fed_batch_setup),
+  control_setup = [(controls.basic_fed_batch_feed,[],fed_batch_setup),
                    (controls.aeration,[],aeration_setup),
-                   (controls.temperature, [36], {})]
-  media_definition = example_media
-  media = {}
-  for component in param.liquid_components:
-    if component in media_definition:
-      media[component] = (initial_volume*media_definition[component]*\
-        param.molecular_weight[component]).simplified
+                   (controls.temperature, [36], {}),
+                   (controls.pH, [7.15], {})]
+
+  media = create_media(example_media, initial_volume)
+
   br_setup = [start_time, media, initial_volume, 36]
   cell_setup = [cell_line, starting_cells]
   config = (assay_setup, control_setup, br_setup, cell_setup)
@@ -90,23 +136,21 @@ def run_experiments(config, duration):
   total_steps = round(duration/param.resolution+random.gauss(0, steps_per_day*0.05))
   
   
-  
-  
   #Define initial values to pass
-  actuation_out = {parameter:Q(0, 'g/min') for parameter in param.liquid_components}
+  actuation_out = {parameter:Q(0, 'mol/min') for parameter in param.liquid_components}
   actuation_out.update({
-    'heat':Q(0, 'W'),
+    'heat':Q(50, 'W'),
     'RPS':Q(5, '1/s'),
     'air':Q(0.01, 'L/min'),
     'O2':Q(0, 'L/min'),
     'CO2':Q(0, 'L/min'),
-    'gas_volume':Q(0,'L/min'),
+    'gas_volume':Q(0.01,'L/min'),
     'liquid_volume':Q(0,'L/min'),
     })
   
   actuation_out = [actuation_out for x in range(len(env_wrappers))]
   
-  cells_output = {'mass_transfer':{parameter:Q(0, 'g/min') for parameter in param.liquid_components},
+  cells_output = {'mass_transfer':{parameter:Q(0, 'mol/min') for parameter in param.liquid_components},
                   'total_cells':Q(0, 'ce'),
                   'diameter':Q(15, 'um'),
                   'volume':Q(15,'um')**3*math.pi/6,
@@ -120,6 +164,18 @@ def run_experiments(config, duration):
   days = int(round(duration/np.timedelta64(1, 'D')))
   next_offline_step = [5]*len(env_wrappers)
   metrics = [[{} for x in range(1+days)]for y in range(len(env_wrappers))]
+  
+  #1 hour of equilibration - cell wrapper is skipped
+  for step in range(int(round(steps_per_day / 24))):
+    for br in range(len(env_wrappers)):
+      environment[br] = env_wrappers[br].step(actuation_out[br], cells_output[br])
+      # Run simulation for a step
+      obs[br] = assay_wrappers[br].step(environment[br], cells_output[br], False)
+      #This will update setpoints for actuation, so actuation doesn't need an 
+      #input.
+      control_metrics = control_wrappers[br].step(obs[br], False)
+      actuation_out[br] = actuation_wrappers[br].step()
+    
   
   for step in range(int(round(total_steps))):
     for br in range(len(env_wrappers)):

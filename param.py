@@ -13,7 +13,7 @@ resolution = np.timedelta64(1, 'm')
 
 # Same as simulation resolution, but in quantities package
 q_intermediate = resolution / np.timedelta64(1, 'm')
-q_res = Q(q_intermediate, 's').simplified
+q_res = Q(q_intermediate, 'min').simplified
 
 cells = q.unitquantity.IrreducibleUnit('cells', symbol = 'ce')
 pg = q.UnitQuantity('pg', 1e-15*q.kg, 'picogram')
@@ -27,10 +27,13 @@ q.HCD = q.CompoundUnit('e6c/ml')
 # cells = q.UnitQuantity('e5 cells', cells*1e5, symbol='e5c')
 
 cell_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'dCO2', 'IGG_a',
-                      'IGG_b', 'IGG_n', 'component_A', 'sodium']
-liquid_components = [*cell_components, 'H2CO3', 'LDH', 'lactate', 
-                      'component_B', 'component_C', 'component_D', ]
+                      'IGG_b', 'IGG_n', 'component_A', 'Na', 'K']
+liquid_components = [*cell_components, 'LDH', 'lactate', 
+                      'component_B', 'component_C', 'component_D', 'Cl',
+                      ]
 gas_components = ['CO2', 'O2', 'air']
+positively_charged = ['Na', 'K']
+negatively_charged = ['Cl']
 
 molecular_weight = {
   'glucose':Q(180.156, 'g/mol'),
@@ -49,14 +52,13 @@ molecular_weight = {
   'IGG_a':Q(150., 'kg/mol'),
   'IGG_b':Q(150., 'kg/mol'),
   'IGG_n':Q(150., 'kg/mol'),
-  'NaCl':Q(58.44, 'g/mol'),
-  'KCl':Q(74.553, 'g/mol'),
   'component_A':Q(100, 'kg/mol'),
   'component_B':Q(50, 'kg/mol'),
   'component_C':Q(500, 'g/mol'),
   'component_D':Q(200, 'g/mol'),
-  'sodium':Q(22.99,'g/mol'),
-  'H2CO3':Q(62.03, 'g/mol'),
+  'Na':Q(22.99,'g/mol'),
+  'K':Q(39.1, 'g/mol'),
+  'Cl':Q(35.453, 'g/mol'),
   }
 
 gravity = Q(9.81, 'm/s**2')
@@ -113,12 +115,12 @@ instrumentation={
   }
 
 cells = {
-  'component_A_production_rate':Q(1., 'pg/ce/day'),
+  'component_A_production_rate':Q(1.e-17, 'mol/ce/day'),
   'extinction_coeff': 200.,
   'mass_transfer_rate': Q(8.5e7, 'm/s'), # 8e-7 m**3 min, corresponds to 2/min
-  'O2_consumption':Q(5.,'g/min/L'),
-  'glucose_consumption':Q(3.e-11,'g/hour'), #per cell
-  'aa_consumption':Q(150.,'g/day/L'),
+  'O2_consumption':Q(0.15,'M/min'),  # 5 g/min/L
+  'glucose_consumption':Q(1.6667e-13,'mol/hour'), #3e-11 g/h per cell
+  'aa_consumption':Q(1.,'M/day'), # 150 g/day/L
   }
 
 actuation = {
