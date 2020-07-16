@@ -8,7 +8,7 @@ Wrapper gets all quantities added and returns an actuation dictionary of rates.
 import random
 
 from quantities import Quantity as Q
-import param
+import param, helper_functions
 
 class mixture:
   """Holds components in a mixture.  Introduces error in the exact amount of 
@@ -21,12 +21,20 @@ class mixture:
       dict of component along with target concentration (g/L)
     """
     if reservoir_size ==None:
-      reservoir_size = Q(1., 'L')
+      reservoir_size = Q(1., 'L').simplified
     self.molarity = {}
-    self.target_concentrations = mixture_components
-    self.size = reservoir_size
+    self.target_molarity = mixture_components
+    self.size = reservoir_size.simplified
     self.replace_source()
-
+    for component in self.target_molarity:
+      if self.target_molarity[component].simplified.dimensionality == \
+        Q(1, 'kg/m**3').dimensionality:
+        self.target_molarity[component] = (self.target_molarity[component]/\
+                                           param.molecular_weight[component]).simplified
+    if param.skip_units:
+      self.size = float(self.size)
+      helper_functions.remove_units(self.target_molarity)
+      
   def dispense(self, liquid_rate):
     output = {}
     self.remaining -= liquid_rate*param.q_res
@@ -39,10 +47,9 @@ class mixture:
     
   def replace_source(self):
     """Generates new mixture with fresh errors."""
-    for component, concentration in self.target_concentrations.items():
+    for component, molarity in self.target_molarity.items():
       error = random.gauss(0, self.p2['component_CV'])
-      self.molarity[component] = \
-        concentration/param.molecular_weight[component]*(1+error)
+      self.molarity[component] = molarity*(1+error)
     self.remaining = self.size
       
     
@@ -61,12 +68,13 @@ class MFC:
     self.systematic_error = random.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
-    self.set_point = Q(0, 'L/min')
+    self.set_point = Q(0, 'L/min').simplified
     self.component = component
     self.break_chance = float((break_chance*param.q_res).simplified)
+    
+    if param.skip_units:
+      self.set_point = 0
 
-
-  
   def step(self):
     if self.set_point != 0:
       # Only called if pump is on.  Constant chance of breaking whenever
@@ -95,9 +103,12 @@ class peristaltic():
     self.systematic_error = random.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
-    self.set_point = Q(0, 'ml/min')
+    self.set_point = Q(0, 'ml/min').simplified
     self.source = mixture(mixture_components, source_size)
     self.break_chance = float((break_chance*param.q_res).simplified)
+    
+    if param.skip_units:
+      self.set_point = float(self.set_point)
     
   def step(self):
     if self.set_point != 0:
@@ -111,8 +122,11 @@ class peristaltic():
 class heating_jacket:
   """Adds energy to bioreactor.  Doesn't break."""
   def __init__(self, max_wattage = Q(100, 'W')):
-    self.max_wattage = max_wattage
+    self.max_wattage = max_wattage.simplified
     self.set_point = 0
+    
+    if param.skip_units:
+      self.max_wattage = float(self.max_wattage)
     
   def step(self):
     return {'heat':self.set_point/100*self.max_wattage}
@@ -127,8 +141,11 @@ class agitator:
     self.systematic_error = random.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
-    self.set_point = RPS
+    self.set_point = RPS.simplified
     self.break_chance = float((break_chance*param.q_res).simplified)
+    
+    if param.skip_units:
+      self.set_point = float(self.set_point)
     
   def step(self):
     if self.set_point != 0:
@@ -145,21 +162,27 @@ class agitator:
 class wrapper:
   def __init__(self, actuation_list):
     self.actuation_list = actuation_list
+    self.initial_actuation =  {}
+    self.initial_actuation['liquid_volume']=Q(0., 'L/min').simplified
+    self.initial_actuation['gas_volume']=Q(0., 'L/min').simplified
+    self.initial_actuation['RPS'] = Q(0., '1/s').simplified
+    self.initial_actuation['heat'] = Q(0., 'W').simplified
+    for item in param.liquid_components:
+      self.initial_actuation[item]=Q(0., 'mol/min').simplified
+    for item in param.gas_components:
+      self.initial_actuation[item] = Q(0., 'L/min').simplified
+    if param.skip_units:
+      helper_functions.remove_units(self.initial_actuation)
     
   def step(self):
-    actuation = {}
-    for item in param.liquid_components:
-      actuation[item]=Q(0., 'mol/min')
-    for item in param.gas_components:
-      actuation[item] = Q(0., 'L/min')
-    actuation['liquid_volume']=Q(0., 'L/min')
-    actuation['gas_volume']=Q(0., 'L/min')
-    actuation['RPS'] = Q(0., '1/s') 
-    actuation['heat'] = Q(0., 'W')
+    
+    actuation = self.initial_actuation.copy()
+    
     
     for item in self.actuation_list:
       components_added = item.step()
       for key, value in components_added.items():
+        print(item, key, value)
         actuation[key] += value
         
     gas_volume = Q(0., 'L/min')

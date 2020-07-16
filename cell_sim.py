@@ -121,41 +121,40 @@ def gen_cell_line():
     param_wrong += cell_param['component_A_sensitivity'] > Q( 5e6, '1/M')
     num += 1
     if param_wrong==0:
-      for param in cell_param:
-        if type(cell_param[param]) == Q:
-          cell_param[param] = cell_param[param].simplified
       return cell_param
   
 class cell_wrapper:
   p = param.cells
   def __init__(self, cell_line, seed_cells):
-    self.viable_cells = seed_cells
+    
+    
+    # Convert to SI units
+    for entry in cell_line:
+      if type(cell_line[entry]) == Q:
+        cell_line[entry] = cell_line[entry].simplified
+        if param.skip_units:
+          cell_line[entry] = float(cell_line[entry])
     self.cp = cell_line
-    self.delayed_death_buckets = [0.]*round(self.cp['death_delay'])
-    self.hour_countdown = np.timedelta64(1, 'h')/param.resolution
+    self.viable_cells = seed_cells.simplified
     self.dying_cells = Q(0., 'ce')
     self.dead_cells = Q(0., 'ce')
-    self.extinction_conversion = np.timedelta64(1, 'D') / param.resolution*self.p['extinction_coeff']
+    self.molarity = {component:Q(0., 'mM').simplified for component in param.cell_components}
+    
+    if param.skip_units:
+      self.viable_cells = float(self.viable_cells)
+      self.dying_cells = 0
+      self.dead_cells = 0
+      self.molarity = {component:0. for component in param.cell_components}
+      
     self.diameter = self.cp['growth_diameter']
     self.volume = math.pi/6*self.diameter**3
-    self.growth_per_tick = (param.q_res/self.cp['growth_rate']).simplified*(
-      self.volume)
+    self.growth_per_tick = float((param.q_res/self.cp['growth_rate'])*self.volume)
     self.out_of_range = {}
-    self.molarity = {component:Q(0., 'mM') for component in param.cell_components}
     self.death_transition_ratio = param.resolution/self.cp['delayed_death_transition']
+    self.extinction_conversion = np.timedelta64(1, 'D') / param.resolution*self.p['extinction_coeff']
+    self.hour_countdown = np.timedelta64(1, 'h')/param.resolution
+    self.delayed_death_buckets = [0.]*round(self.cp['death_delay'])
     
-  def calc_mass_transfer(self, env):
-    """
-    Resource intake
-    Modelled as passive first-order single-layer with high diffusion value
-    Future updates:
-      active mass_transfer
-      boundary layers
-      """
-    mass_transfer = {}
-
-    return mass_transfer
-  
   def calc_growth(self, env, rate):
     """Calculate where the cell is expending its energy and what stage it is 
     in.  Currently based purely on present conditions, can include internal
@@ -201,9 +200,10 @@ class cell_wrapper:
     self.hour_countdown -= 1
     if self.hour_countdown <= 0:
       self.hour_countdown += np.timedelta64(1, 'h') / param.resolution
-      self.dying_cells += Q(self.delayed_death_buckets[-1], 'ce')
+      if param.skip_units: self.dying_cells += self.delayed_death_buckets[-1]
+      else: self.dying_cells += Q(self.delayed_death_buckets[-1], 'ce')
       self.delayed_death_buckets = [0]+self.delayed_death_buckets[:-1]
-      print(f'Swapped!  {len(self.delayed_death_buckets)}{self.delayed_death_buckets}')
+      # print(f'Swapped!  {len(self.delayed_death_buckets)}{self.delayed_death_buckets}')
     extinction_rate = 0
     # If environmental variables are out of bounds, the cells start to die
     for condition in ['mOsm', 'temperature', 'dO2', 'pH']:
@@ -211,7 +211,7 @@ class cell_wrapper:
       # diff = max(0, abs(env[condition]-self.cp[condition])-self.cp[tolerance])
       diff = env[condition]-self.cp[condition]
       extinction_rate += (math.exp((diff/self.cp[tolerance])**2)-1)
-      print(condition, diff/self.cp[tolerance], env[condition], self.cp[condition])
+      # print(condition, diff/self.cp[tolerance], env[condition], self.cp[condition])
     extinction_rate +=math.exp((1.6-limiting_ratio*1.6)**2)-1
     #Convert extinction rate from per day to per step
     extinction_rate /= self.extinction_conversion/metabolism_rate
@@ -266,8 +266,7 @@ class cell_wrapper:
     if limiting_rate < 0:
       print('Negative rate!')
       print(limiting_rate)
-      print(aa_limiting_rate, O2_limiting_rate, glucose_limiting_rate)
-      
+      print(aa_limiting_rate, O2_limiting_rate, glucose_limiting_rate)    
     mass_transfer = {}
     consumption = {}
     ending_molarity = {}
@@ -312,7 +311,7 @@ class cell_wrapper:
         -sensitivity*(env[variable]-1/sensitivity*3-tolerance)).simplified))
     for variable in ['pH', 'dO2', 'mOsm', 'temperature']:
       tolerance = self.cp[variable+'_tolerance']
-      # print('CE', variable, env[variable], self.cp[variable], tolerance)
+      print('CE', variable, env[variable], self.cp[variable], tolerance)
       self.out_of_range[variable] = 1-1/\
         math.exp((abs(env[variable]-self.cp[variable])/tolerance)**2)
 

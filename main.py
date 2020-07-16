@@ -17,10 +17,10 @@ from quantities import Quantity as Q
 import quantities as q
 from matplotlib import pyplot as plt
 
-import actuation, assays, cell_sim, controls, bioreactor, param
+import actuation, assays, cell_sim, controls, bioreactor, param, helper_functions
 
 example_media = {
-            'NaHCO3':Q(20., 'mM'), 
+            'NaHCO3':Q(24., 'mM'), 
             'dO2':Q(0.21, 'mM'), 
            # 'H2CO3':Q(, 'g/L'), 
            # 'iron':Q(, 'g/L'), 
@@ -38,51 +38,33 @@ example_media = {
            'NaCl':Q(50., 'mM'),
            'KCl':Q(70., 'mM')}
 
-def create_media_mass(media_definition, volume):
-  
+"""The simulation needs initial starting conditions for actual and cells to pass to 
+modules for the first step."""
 
-  media = {component:Q(0., 'g') for component in param.liquid_components}
-  
-  for component, molarity in media_definition.items():
-    #If component dissociates, add species separately
-    if component =='NaHCO3':
-      #HCO3 is in equilibrium with CO2 and pH.  Charge is accounted for in Na
-      component = ['Na', 'dCO2']
-    elif component == 'NaCl':
-      component = ['Na', 'Cl']
-    elif component == 'KCl':
-      component = ['K', 'Cl']
-    else: component = [component]
-    
-    for species in component:
-      if species in param.liquid_components:
-        media[species] += \
-          (param.molecular_weight[species]*molarity*volume).simplified
-        
-  return media
+initial_actuation = {parameter:Q(0, 'mol/min') for parameter in param.liquid_components}
+initial_actuation.update({
+  'heat':Q(50, 'W').simplified,
+  'RPS':Q(5, '1/s').simplified,
+  'air':Q(0.01, 'L/min').simplified,
+  'O2':Q(0, 'L/min').simplified,
+  'CO2':Q(0, 'L/min').simplified,
+  'gas_volume':Q(0.01,'L/min').simplified,
+  'liquid_volume':Q(0,'L/min').simplified,
+  })
 
-def create_media(media_definition, volume):
-  
+no_cells = {'mass_transfer':{parameter:Q(0, 'mol/min').simplified for parameter in param.liquid_components},
+                'total_cells':Q(0, 'ce').simplified,
+                'diameter':Q(15, 'um').simplified,
+                'volume':Q(15,'um').simplified**3*math.pi/6,
+  }
 
-  media = {component:Q(0., 'mol') for component in param.liquid_components}
-  
-  for component, molarity in media_definition.items():
-    #If component dissociates, add species separately
-    if component =='NaHCO3':
-      #HCO3 is in equilibrium with CO2 and pH.  Charge is accounted for in Na
-      component = ['Na', 'dCO2']
-    elif component == 'NaCl':
-      component = ['Na', 'Cl']
-    elif component == 'KCl':
-      component = ['K', 'Cl']
-    else: component = [component]
-    
-    for species in component:
-      if species in param.liquid_components:
-        media[species] += \
-          (molarity*volume).simplified
-        
-  return media
+if param.skip_units:
+  for key in initial_actuation:
+    initial_actuation[key] = float(initial_actuation[key].simplified)
+  for key in no_cells:
+    no_cells[key] = float(no_cells[key].simplified)
+
+
         
 
 def create_config(num_experiments):
@@ -110,8 +92,7 @@ def create_config(num_experiments):
                    (controls.temperature, [36], {}),
                    (controls.pH, [7.15], {})]
 
-  media = create_media(example_media, initial_volume)
-
+  media = helper_functions.create_media_as_mole(example_media, initial_volume)
   br_setup = [start_time, media, initial_volume, 36]
   cell_setup = [cell_line, starting_cells]
   config = (assay_setup, control_setup, br_setup, cell_setup)
@@ -137,25 +118,10 @@ def run_experiments(config, duration):
   
   
   #Define initial values to pass
-  actuation_out = {parameter:Q(0, 'mol/min') for parameter in param.liquid_components}
-  actuation_out.update({
-    'heat':Q(50, 'W'),
-    'RPS':Q(5, '1/s'),
-    'air':Q(0.01, 'L/min'),
-    'O2':Q(0, 'L/min'),
-    'CO2':Q(0, 'L/min'),
-    'gas_volume':Q(0.01,'L/min'),
-    'liquid_volume':Q(0,'L/min'),
-    })
+
   
-  actuation_out = [actuation_out for x in range(len(env_wrappers))]
-  
-  cells_output = {'mass_transfer':{parameter:Q(0, 'mol/min') for parameter in param.liquid_components},
-                  'total_cells':Q(0, 'ce'),
-                  'diameter':Q(15, 'um'),
-                  'volume':Q(15,'um')**3*math.pi/6,
-    }
-  cells_output = [cells_output]*len(env_wrappers)
+  actuation_out = [initial_actuation for x in range(len(env_wrappers))]
+  cells_output = [no_cells]*len(env_wrappers)
   environment = [[]]*len(env_wrappers)
   obs = [[]]*len(env_wrappers)
   

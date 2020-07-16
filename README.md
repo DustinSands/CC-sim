@@ -18,19 +18,36 @@ This tool could, in theory, be used to:
 Currently implemented:
   Various assays, all with their own forms of error (systematic, drift, random)
     and calibration schemes
-  Randomly generated cell lines with 30+ varying parameters
   Modular control strategies and actuation devices
+  pH calc from bicarb buffer equations (no weak acids / bases yet) 
   Customizable bioreactor setup**
-  Cell model that loosely reflects RL data
-    Includes basic PQ data
+  Macroscopic cell model
+    Randomly generated cell lines with 30+ varying parameters
+    Metabolism with limiting reactants
+    Includes PQ data (correlated (incorrectly) to environmental conditions)
+    Delayed death
+    Size changes depending on phase of growth / environmental conditions
+    Glucose, O2, and AA (lumped) consumption reflect real data
+  Units to safeguard whether implementation is correct
+  Compartamentalized simulation and observation data to keep controls from using
+    real instead of observed data
+  Randomized sample times, mixture errors, assay errors, cell parameters, etc.
     
-A note on the cell model: The cell model is intended to approximate real-world
-data on things like cell phases, osmo tolerance, nutrient consumption, etc.
-I am not a cell biologist, and many of the underlying mechanics are not accurate.
-However, they are intended to be sufficiently randomized yet still correlated
-with environmental conditions that a ML model could attempt to train on and learn 
-from the data generated, the idea being that if it can pick up correlations that
-have not been hard coded then it can pick up other correlations in real CC data.
+    
+A note on the cell model: This code uses a macroscopic cell simulation to approximate
+how a cell could react in a given situation.  
+
+
+Best practices:
+  Use units.  E.G. quantities.Quantity(1, 'kg') for one kilogram
+    Don't include units for temperature (relational units are not supported)
+  It is the class' responsibility to convert to SI units / float depending on mode
+  
+To run:
+  main.py is configured to generate a random cell line, and run 2x2L scale 
+  fed-batch reactors for 14 days and plot the results.  Use it to get an idea
+  of how experiments can be configured, run, and finally have the results 
+  visualized.
   
   
 **kLa, shear equations will be most accurate at 2L scale

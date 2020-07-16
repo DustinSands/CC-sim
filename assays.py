@@ -174,7 +174,7 @@ class bioHT(machine):
     if assay == 'IGG':
       value = env['IGG_a']+env['IGG_b']+env['IGG_n']
     else: value = env[assay]
-    return {assay: value*self.error_CV(assay)/param.molecular_weight[assay]}
+    return {assay: value*self.error_CV(assay)*param.molecular_weight[assay]}
   
     # return {assay:value(environment[assay],assay) for assay in self.assay_list}
 

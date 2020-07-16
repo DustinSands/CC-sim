@@ -10,7 +10,7 @@ import pdb
 from quantities import Quantity as Q
 import numpy as np
 
-import tests, actuation, param, main
+import tests, actuation, param, main, helper_functions
 
 
 
@@ -32,16 +32,28 @@ class feed_strategy:
   """
   def __init__(self, initial_volume, sample_interval, cpp, 
                set_point, initial_time, target_seeding_density):
-    self.initial_volume = initial_volume
-    self.seeding_density = target_seeding_density
+    self.initial_volume = initial_volume.simplified
+    self.seeding_density = target_seeding_density.simplified
+    self.sp = set_point.simplified
+    
+    
+    if param.skip_units:
+      self.initial_volume = float(self.initial_volume)
+      self.seeding_density = float(self.seeding_density)
+      self.sp = float(self.sp)
+      self.cpp = float(self.cpp)
+    
     self.seed_time = initial_time
     self.VCD = self.seeding_density
-    self.last_VCD = target_seeding_density
+    self.last_VCD = self.seeding_density
     self.last_volume = self.initial_volume
     self.interval = sample_interval
-    self.sp = set_point
-    self.cpp = cpp
+ 
     self.ignore_first = 0
+    self.cpp = cpp
+    
+    
+      
   
   def step(self, obs, offline):
     #Check if there is a new reading for the control parameter
@@ -66,28 +78,24 @@ class basic_fed_batch_feed(feed_strategy):
   """
   def __init__(self, feed_mixture = None, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.addition_rate = Q(0, 'g/min')
+    self.addition_rate = Q(0, 'g/min').simplified
     self.last_time = self.seed_time-np.timedelta64(1, 'D')
     
     if feed_mixture == None:
-      feed_mixture = {'glucose':Q(500, 'g/L')}
+      feed_mixture = {'glucose':Q(500, 'g/L').simplified}
+    else:
+      feed_mixture = feed_mixture.copy()
+      for key in feed_mixture:
+        feed_mixture[key] = feed_mixture[key].simplified
+    if param.skip_units: 
+      helper_functions.remove_units(feed_mixture)
     self.feed_mixture = feed_mixture
     self.actuation = [actuation.peristaltic(feed_mixture)]
-
     
-  # def update_control(self, obs):
-  #   time_since_last_obs = Q((obs['time']-self.last_time)/np.timedelta64(1, 'm'), 'min')
-  #   average_VCD = (obs['VCD']+self.last_VCD)/2
-  #   consumption_rate = \
-  #     (self.addition_rate - (obs['mass']-self.last_mass)/time_since_last_obs) /\
-  #     average_VCD
-  #   self.predicted_VCD = obs['VCD'] #Maybe update this later....
-  #   self.addition_rate = (self.sp - obs[self.cpp])*obs['Volume']/self.interval +\
-  #     self.predicted_VCD*consumption_rate
-  #   self.last_mass = obs['mass']
-  #   self.last_VCD = obs['VCD']
-  #   self.last_time = obs['time']
-  #   self.actuation.set_point = self.addition_rate
+    if param.skip_units:
+      self.addition_rate = float(self.addition_rate)
+      for component in self.feed_mixture:
+        self.feed_mixture[component] = float(self.feed_mixture[component])
     
   def update_control(self, obs):
     volume = obs['mass']/param.expected_cc_density
@@ -105,10 +113,9 @@ class basic_fed_batch_feed(feed_strategy):
       predicted_VCD = 2*obs['VCD']-average_VCD #Maybe update this later....
       predicted_volume = 2*volume - average_volume
       self.addition_rate = (self.sp*predicted_volume - obs[self.cpp]*volume)/\
-        self.interval +\
-        predicted_VCD*CSCR*predicted_volume
+        self.interval + predicted_VCD*CSCR*predicted_volume
       if self.addition_rate < 0:
-        self.addition_rate = Q(0, 'g/min')
+        self.addition_rate *= 0
 
     self.actuation[0].set_point = self.addition_rate / self.feed_mixture[self.cpp]
     self.last_VCD = obs['VCD']
@@ -116,6 +123,7 @@ class basic_fed_batch_feed(feed_strategy):
     self.last_volume = volume
     self.last_concentration = obs[self.cpp]
     self.ignore_first = 1
+    
     return {'glucose_solution':self.actuation[0].set_point}
 
 class dynamic_perfusion_feed(feed_strategy):
@@ -177,20 +185,30 @@ class aeration:
                max_air = Q(0.2, 'L/min'), 
                max_O2 = Q(0.1, 'L/min')):
     """max_air and max_O2 should be in volumetric flow rates."""
+    
+    self.sp = setpoint
+    
     self.PID = PID(0.1, Q(1/15, '1/min'), Q(3, 'min'), 
                    setpoint, 5)
     self.actuation = [actuation.MFC('air'), actuation.MFC('O2'), actuation.agitator(Q(300/60., '1/s'))]
-    self.max_air = max_air
-    self.max_O2 = max_O2
-    self.min_air = min_air
-    self.sp = setpoint
+    self.max_air = max_air.simplified
+    self.max_O2 = max_O2.simplified
+    self.min_air = min_air.simplified
+    self.zero = Q(0, 'L/min').simplified
+    
+    if param.skip_units:
+      self.max_air = float(self.max_air.simplified)
+      self.max_O2 = float(self.max_O2)
+      self.min_air = float(self.min_air)
+      self.zero = float(self.zero)
+    
 
     
   def step(self, obs, offline):
     PID_out = self.PID.step(obs['dO2'])
     if PID_out < 80:
       self.actuation[0].set_point = PID_out/80 * (self.max_air-self.min_air)+self.min_air
-      self.actuation[1].set_point =  Q(0,'L/min')
+      self.actuation[1].set_point =  self.zero
     else:
       self.actuation[0].set_point = self.max_air
       self.actuation[1].set_point = (PID_out-80)/20 * self.max_O2
@@ -205,21 +223,26 @@ class pH:
     self.PID = PID(-3, -Q(5, '1/min'), -Q(2, 'min'), 
                    max_pH, 5)
     self.actuation = [actuation.MFC('CO2')]
-    self.max_CO2 = max_CO2
-    self.min_CO2 = min_CO2
+    self.max_CO2 = max_CO2.simplified
+    self.min_CO2 = min_CO2.simplified
     self.sp = max_pH
+    
+    if param.skip_units:
+      self.max_CO2 = float(self.max_CO2)
+      self.min_CO2 = float(self.min_CO2)
 
     
   def step(self, obs, offline):
     PID_out = self.PID.step(obs['pH'])
     self.actuation[0].set_point = PID_out/100 * (self.max_CO2-self.min_CO2)+self.min_CO2
+    print('pH', obs['pH'], PID_out)
     return {'pH_PID':PID_out}
 
 class temperature:
-  def __init__(self, setpoint):
+  def __init__(self, setpoint, max_heating = Q(100, 'W')):
     self.PID = PID(10, Q(1, '1/min'), Q(3, 'min'), 
                    setpoint, 50)
-    self.actuation = [actuation.heating_jacket(Q(100, 'W'))]
+    self.actuation = [actuation.heating_jacket(max_heating)]
     
   def step(self, obs, offline):
     PID_out = self.PID.step(obs['temperature'])

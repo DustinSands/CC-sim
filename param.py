@@ -10,6 +10,10 @@ from quantities import Quantity as Q
 #The simulation resolution
 resolution = np.timedelta64(1, 'm')
 
+# Safe mode; off checks that all units are compatible when operating on them
+# on is much faster, but should not be used when implementing new features
+skip_units = 0
+
 
 # Same as simulation resolution, but in quantities package
 q_intermediate = resolution / np.timedelta64(1, 'm')
@@ -52,6 +56,7 @@ molecular_weight = {
   'IGG_a':Q(150., 'kg/mol'),
   'IGG_b':Q(150., 'kg/mol'),
   'IGG_n':Q(150., 'kg/mol'),
+  'IGG':Q(150, 'kg/mol'),
   'component_A':Q(100, 'kg/mol'),
   'component_B':Q(50, 'kg/mol'),
   'component_C':Q(500, 'g/mol'),
@@ -117,9 +122,10 @@ instrumentation={
 cells = {
   'component_A_production_rate':Q(1.e-17, 'mol/ce/day'),
   'extinction_coeff': 200.,
-  'mass_transfer_rate': Q(8.5e7, 'm/s'), # 8e-7 m**3 min, corresponds to 2/min
+  'mass_transfer_rate': Q(1.1e-11, 'm/s'), # 1.1e-11 is 0.2/min for 20um cell
   'O2_consumption':Q(0.15,'M/min'),  # 5 g/min/L
-  'glucose_consumption':Q(1.6667e-13,'mol/hour'), #3e-11 g/h per cell
+  'glucose_consumption':Q(1.6667e-13,'mol/hour'),
+  # 'glucose_consumption':Q(1.6667e-13,'mol/hour'), #3e-11 g/h per cell
   'aa_consumption':Q(1.,'M/day'), # 150 g/day/L
   }
 
