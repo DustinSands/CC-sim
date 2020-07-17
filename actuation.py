@@ -23,9 +23,9 @@ class mixture:
     if reservoir_size ==None:
       reservoir_size = Q(1., 'L').simplified
     self.molarity = {}
-    self.target_molarity = mixture_components
+    self.target_molarity = mixture_components.copy()
     self.size = reservoir_size.simplified
-    self.replace_source()
+    
     for component in self.target_molarity:
       if self.target_molarity[component].simplified.dimensionality == \
         Q(1, 'kg/m**3').dimensionality:
@@ -34,10 +34,12 @@ class mixture:
     if param.skip_units:
       self.size = float(self.size)
       helper_functions.remove_units(self.target_molarity)
+    
+    self.replace_source()
       
   def dispense(self, liquid_rate):
     output = {}
-    self.remaining -= liquid_rate*param.q_res
+    self.remaining -= liquid_rate*param.step_size
     if self.remaining < 0:    #Update at some point to happen during offline assays?
       self.replace_source()
     for component, molarity in self.molarity.items():
@@ -51,6 +53,7 @@ class mixture:
       error = random.gauss(0, self.p2['component_CV'])
       self.molarity[component] = molarity*(1+error)
     self.remaining = self.size
+
       
     
 
@@ -162,27 +165,40 @@ class agitator:
 class wrapper:
   def __init__(self, actuation_list):
     self.actuation_list = actuation_list
-    self.initial_actuation =  {}
-    self.initial_actuation['liquid_volume']=Q(0., 'L/min').simplified
-    self.initial_actuation['gas_volume']=Q(0., 'L/min').simplified
-    self.initial_actuation['RPS'] = Q(0., '1/s').simplified
-    self.initial_actuation['heat'] = Q(0., 'W').simplified
-    for item in param.liquid_components:
-      self.initial_actuation[item]=Q(0., 'mol/min').simplified
-    for item in param.gas_components:
-      self.initial_actuation[item] = Q(0., 'L/min').simplified
-    if param.skip_units:
-      helper_functions.remove_units(self.initial_actuation)
+    # self.initial_actuation =  {}
+    # self.initial_actuation['liquid_volume']=Q(0., 'L/min').simplified
+    # self.initial_actuation['gas_volume']=Q(0., 'L/min').simplified
+    # self.initial_actuation['RPS'] = Q(0., '1/s').simplified
+    # self.initial_actuation['heat'] = Q(0., 'W').simplified
+    # for item in param.liquid_components:
+    #   self.initial_actuation[item]=Q(0., 'mol/min').simplified
+    # for item in param.gas_components:
+    #   self.initial_actuation[item] = Q(0., 'L/min').simplified
+    # if param.skip_units:
+    #   helper_functions.remove_units(self.initial_actuation)
     
   def step(self):
-    
-    actuation = self.initial_actuation.copy()
+
+    # actuation = self.initial_actuation.copy()
+    actuation =  {}
+    actuation['liquid_volume']=Q(0., 'L/min').simplified
+    actuation['gas_volume']=Q(0., 'L/min').simplified
+    actuation['RPS'] = Q(0., '1/s').simplified
+    actuation['heat'] = Q(0., 'W').simplified
+    for item in param.liquid_components:
+      actuation[item]=Q(0., 'mol/min').simplified
+    for item in param.gas_components:
+      actuation[item] = Q(0., 'L/min').simplified
+    if param.skip_units:
+      actuation = {component:0 for component in [*param.liquid_components, 
+                *param.gas_components, 'liquid_volume',
+                'gas_volume', 'RPS', 'heat']}
     
     
     for item in self.actuation_list:
       components_added = item.step()
       for key, value in components_added.items():
-        print(item, key, value)
+        # print(item, key, value)
         actuation[key] += value
         
     gas_volume = Q(0., 'L/min')

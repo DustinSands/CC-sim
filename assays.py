@@ -14,6 +14,7 @@ import random
 
 import numpy as np
 from quantities import Quantity as Q
+import quantities as q
 
 import tests, param
 
@@ -36,9 +37,16 @@ class probe(machine):
 
 class scale(machine):
   p = param.instrumentation['Scale']
+  def __init__(self):
+    self.cc_density = param.actual_cc_density
+    if param.skip_units:
+      self.cc_density = float(self.cc_density)
   def read_value(self, environment, _):
-    random_error = Q(random.gauss(0, self.p['random_error_sigma']), 'g')
-    mass = environment['volume']*param.actual_cc_density + random_error
+    if param.skip_units:
+      random_error = random.gauss(0, self.p['random_error_sigma'])
+    else:
+      random_error = random.gauss(Q(0, 'kg'), self.p['random_error_sigma'])
+    mass = environment['volume']*self.cc_density + random_error
     return {'mass': mass}
   
 class O2_probe(probe):
@@ -55,6 +63,9 @@ class O2_probe(probe):
     self.sys_error = 5
     self.value = 100
     self.one_point(time)  #auto one-point
+    self.conversion_constant = (1/Q(0.0021, 'mM')).simplified
+    if param.skip_units:
+      self.conversion_constant = float(self.conversion_constant)
     
     
   def one_point(self, time, value = 100):
@@ -68,7 +79,7 @@ class O2_probe(probe):
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
     random_error = random.gauss(0, self.p['random_CV'])
-    percent_DO = (environment['dO2']/Q(0.0021, 'mM')).simplified
+    percent_DO = environment['dO2']*self.conversion_constant
     value = percent_DO*(1+drift_error+random_error)+self.sys_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
     return {'dO2': self.value}
@@ -174,6 +185,7 @@ class bioHT(machine):
     if assay == 'IGG':
       value = env['IGG_a']+env['IGG_b']+env['IGG_n']
     else: value = env[assay]
+    
     return {assay: value*self.error_CV(assay)*param.molecular_weight[assay]}
   
     # return {assay:value(environment[assay],assay) for assay in self.assay_list}
@@ -189,18 +201,25 @@ class cell_counter(machine):
 
   def update_calibration(self):
     self.density_sys_error = random.gauss(0, self.p['density_systematic_error_CV'])
-    self.size_sys_error = Q(random.gauss(0, self.p['size_systematic_error_sigma']), 'um')
     self.via_sys_error = random.gauss(0, self.p['viability_systematic_error_sigma'])
+    if param.skip_units:
+      self.size_sys_error = random.gauss(0, self.p['size_systematic_error_sigma'])
+    else:
+      self.size_sys_error = random.gauss(Q(0, 'm'), self.p['size_systematic_error_sigma'])
+      
     
   def read_value(self, env, cells):
     # time_delta is time since last calibration
     random_error = random.gauss(0, self.p['density_random_error_CV'])
     VCD = cells['living_cells'] /env['volume']
     VCD *=(1+random_error+self.density_sys_error)
-    random_error = random.gauss(0, self.p['size_random_error_sigma'])
-    cell_size = cells['diameter']+Q(random_error, 'um')+self.size_sys_error
+    if param.skip_units:
+      random_error = random.gauss(0, self.p['size_random_error_sigma'])
+    else:
+      random_error = random.gauss(Q(0,'m'), self.p['size_random_error_sigma'])
+    cell_size = cells['diameter']+self.size_sys_error
     random_error = random.gauss(0, self.p['viability_random_error_sigma'])
-    viability = cells['living_cells']/cells['total_cells']*100+random_error+self.via_sys_error
+    viability = cells['living_cells']/cells['total_cells']+random_error+self.via_sys_error
     return {'VCD': VCD, 'cell_diameter': cell_size, 'viability': viability}
 
 

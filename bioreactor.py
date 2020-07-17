@@ -95,6 +95,8 @@ class bioreactor:
     self.overall_heat_transfer_coeff = heat_transfer_coeff.simplified*\
       (2*self.CSA+self.volume/self.CSA*math.pi*self.diameter)   #external area
     self.one_cell = Q(1, 'ce')
+    self.solubility_units = Q(1, 's**2*mol/(kg*m**2)') # Solubility / pressure
+    self.volumetric_heat_capacity = param.volumetric_heat_capacity
 
     
     if param.skip_units == 1:
@@ -107,6 +109,8 @@ class bioreactor:
       self.CSA = float(self.CSA)
       self.overall_heat_transfer_coeff = float(self.overall_heat_transfer_coeff)
       self.one_cell = 1
+      self.solubility_units = float(self.solubility_units)
+      self.volumetric_heat_capacity = float(self.volumetric_heat_capacity)
 
     self.agitator = agitator
     self.current_time = start_time
@@ -125,14 +129,14 @@ class bioreactor:
       Chem. Eng. 9 (June) (1986) 55–63.
       """
     ratio = (self.agitator.diameter / self.diameter)**0.3
-    self.mean_shear = (4.2*RPS*ratio*self.agitator.diameter /\
-                         self.agitator.width).simplified
+    self.mean_shear = 4.2*RPS*ratio*self.agitator.diameter /\
+                         self.agitator.width
     self.max_shear = self.mean_shear / 4.2 * 9.7
   
   def check_and_update(self, actuation):
     self.current_time += param.resolution
     if not (actuation == self.old and actuation['liquid_volume'] == 0):
-      self.old = actuation
+      self.old = actuation.copy()
       # Is this in per hour or per minute?
       self.kla = self.kla_func(actuation['RPS'], actuation['gas_volume'], self.working_volume)
       self.gas_percentages = self.calc_gas_percentages(actuation)
@@ -162,24 +166,28 @@ class bioreactor:
 
     for component in param.liquid_components:
       if component[1:] in param.gas_components:
-        solubility = get_solubility[component](self.temperature)
-        if param.skip_units == 0:
-          # solubility is actually solubility per pressure here
-          solubility = Q(float(solubility), 's**2*mol/(kg*m**2)')
-        C_star = self.gas_percentages[component]*self.pressure*solubility
+        solubility = get_solubility[component](self.temperature)*\
+          self.pressure*self.solubility_units
+        C_star = self.gas_percentages[component]*solubility
         kLa = self.kla*param.kla_ratio[component]
-        transfer_coeff = math.exp(-kLa*param.q_res)
+        transfer_coeff = math.exp(-kLa*param.step_size)
         # if component == 'dCO2':
         #   pdb.set_trace()
         self.mole[component] = transfer_coeff*self.mole[component] + (1-transfer_coeff)*\
           (C_star*self.working_volume - cells['mass_transfer'][component]/kLa)
+        if self.mole[component] < 0:
+          print('Negative component! Entering Debug')
+          pdb.set_trace()
 
       else: 
         transfer_rate = actuation[component]
         # if component =='glucose':
         #   print('BR', component, transfer_rate, self.mole[component])
-        self.mole[component] += (transfer_rate - cells['mass_transfer'][component]) * param.q_res
-    self.working_volume += actuation['liquid_volume']*param.q_res
+        self.mole[component] += (transfer_rate - cells['mass_transfer'][component]) * param.step_size
+        if self.mole[component] < 0:
+          print('Negative component! Entering Debug')
+          pdb.set_trace()
+    self.working_volume += actuation['liquid_volume']*param.step_size
     
     
     #Temperature
@@ -187,8 +195,8 @@ class bioreactor:
     heat_transfer = actuation['heat'] + \
       (param.environment_temperature-self.temperature)*\
         self.overall_heat_transfer_coeff
-    self.temperature += heat_transfer*param.q_res /\
-      (self.working_volume*param.volumetric_heat_capacity)
+    self.temperature += heat_transfer*param.step_size /\
+      (self.working_volume*self.volumetric_heat_capacity)
 
     
     osmo = self.total_moles()/(self.working_volume*(1-cell_fraction))
@@ -238,22 +246,28 @@ class bioreactor:
   def create_kla_function(self):
     """Calculate and return a function for oxygen transfer rate.
     """
+    if param.skip_units:
+      viscosity = float(param.viscosity)
+      gravity = float(param.gravity)
+    else: 
+      viscosity = param.viscosity / Q(1, 'Pa*s')
+      gravity = param.gravity
     diam_ratio = self.agitator.diameter / self.diameter
     A = 5.3 * math.exp(-5.4*diam_ratio)
     B = 0.47 * diam_ratio**1.3
     C = 0.64 - 1.1 * diam_ratio
-    froude_coeff = self.agitator.diameter / param.gravity
+    froude_coeff = self.agitator.diameter / gravity
     CSA = math.pi*self.diameter**2/4
-    if param.skip_units:
-      viscosity_units = 1
-    else: viscosity_units = Q(1, 'Pa*s')
+    
+    
       
     def kla_func(RPS, gas_flow, working_volume):
       froude = (froude_coeff*(RPS)**2)
       aeration = gas_flow / (RPS*self.agitator.diameter**3)
       ungassed_power = self.agitator.ungassed_power(RPS)
+      
       lower_gassed_power = ungassed_power *\
-        (1-(B-A*param.viscosity/viscosity_units)*froude**0.25*\
+        (1-(B-A*viscosity)*froude**0.25*\
         math.tanh(C*aeration))
       upper_gassed_power = (self.agitator.number - 1)* ungassed_power* \
         (1-(A+B*froude)*aeration**(C+0.04*froude))
@@ -261,8 +275,8 @@ class bioreactor:
       kla = 1080*float((lower_gassed_power+upper_gassed_power) / working_volume)** \
         0.39 * superficial_velocity**0.79
       if param.skip_units:
-        return kla
-      return Q(kla, '1/min')
+        return kla/60
+      return Q(kla, '1/min').simplified
     return kla_func
 
 

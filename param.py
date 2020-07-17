@@ -2,22 +2,28 @@
 """
 Holds global parameters for the simulation
 """
+import pdb
+
 import numpy as np
 import quantities as q
 from quantities import Quantity as Q
 
+import helper_functions
 
 #The simulation resolution
 resolution = np.timedelta64(1, 'm')
 
 # Safe mode; off checks that all units are compatible when operating on them
 # on is much faster, but should not be used when implementing new features
-skip_units = 0
+skip_units = 1
 
 
 # Same as simulation resolution, but in quantities package
 q_intermediate = resolution / np.timedelta64(1, 'm')
 q_res = Q(q_intermediate, 'min').simplified
+if skip_units:
+  step_size = float(q_res)
+else: step_size = q_res
 
 cells = q.unitquantity.IrreducibleUnit('cells', symbol = 'ce')
 pg = q.UnitQuantity('pg', 1e-15*q.kg, 'picogram')
@@ -26,9 +32,23 @@ cm = q.UnitQuantity('e5c', 1e5*cells, 'e5c')
 hcm = q.UnitQuantity('e6c', 1e6*cells, 'e6c')
 q.CD = q.CompoundUnit('e5c/ml')
 q.HCD = q.CompoundUnit('e6c/ml')
-# cell_density = q.UnitQuantity('cell density', cells/q.mL, symbol = 'e5c/ml')
-# cells = q.unitquantity.IrreducibleUnit('cell', symbol = 'cell')
-# cells = q.UnitQuantity('e5 cells', cells*1e5, symbol='e5c')
+
+#Constants
+gravity = Q(9.81, 'm/s**2').simplified
+actual_cc_density = Q(980, 'g/L').simplified #Assumed constant.  Can be deleted when calculated density encoded
+expected_cc_density = Q(1000, 'g/L').simplified
+viscosity = Q(0.001, 'Pa*s').simplified
+environment_temperature = 26
+volumetric_heat_capacity = Q(4180, 'J/L').simplified # per K 
+# if skip_units:
+#   gravity = float(gravity)
+#   actual_cc_density =float(actual_cc_density)
+#   expected_cc_density = float(expected_cc_density)
+#   viscosity = float(viscosity) 
+#   environment_temperature = float(environment_temperature)
+#   volumetric_heat_capacity = float(volumetric_heat_capacity)
+
+
 
 cell_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'dCO2', 'IGG_a',
                       'IGG_b', 'IGG_n', 'component_A', 'Na', 'K']
@@ -66,13 +86,6 @@ molecular_weight = {
   'Cl':Q(35.453, 'g/mol'),
   }
 
-gravity = Q(9.81, 'm/s**2')
-actual_cc_density = Q(980, 'g/L') #Assumed constant.  Can be deleted when calculated density encoded
-expected_cc_density = Q(1000, 'g/L')
-viscosity = Q(0.001, 'Pa*s')
-environment_temperature = 26
-volumetric_heat_capacity = Q(4180, 'J/L') # per K 
-
 # ERROR CONSTANTS
 instrumentation={
   'BGA':{
@@ -109,21 +122,21 @@ instrumentation={
   'Cell_Counter':{
     'density_random_error_CV':0.05,      # s
     'density_systematic_error_CV':0.03,  # s
-    'viability_random_error_sigma':1.5, #net, s
-    'viability_systematic_error_sigma':2, #net, s
-    'size_random_error_sigma':0.1,
-    'size_systematic_error_sigma':0.2,
+    'viability_random_error_sigma':0.015, #net, s
+    'viability_systematic_error_sigma':0.02, #net, s
+    'size_random_error_sigma':Q(0.1, 'um'),
+    'size_systematic_error_sigma':Q(0.2, 'um'),
     },
   'Scale':{
-    'random_error_sigma':0.02, #grams
+    'random_error_sigma':Q(0.02, 'g'), #grams
     }
   }
 
 cells = {
   'component_A_production_rate':Q(1.e-17, 'mol/ce/day'),
   'extinction_coeff': 200.,
-  'mass_transfer_rate': Q(1.1e-11, 'm/s'), # 1.1e-11 is 0.2/min for 20um cell
-  'O2_consumption':Q(0.15,'M/min'),  # 5 g/min/L
+  'mass_transfer_rate': Q(6.4e-7, 'm/s'), # 1.1e-11 is 0.2/min for 20um cell
+  'O2_consumption':Q(0.0015,'M/min'),  # 5 g/min/L
   'glucose_consumption':Q(1.6667e-13,'mol/hour'),
   # 'glucose_consumption':Q(1.6667e-13,'mol/hour'), #3e-11 g/h per cell
   'aa_consumption':Q(1.,'M/day'), # 150 g/day/L
@@ -147,8 +160,17 @@ actuation = {
   }
 
 # Constants
+"""CO2 kLa is actually 0.95 of O2 kLa.  However, there occurs significant 
+depletation / saturation of CO2 in gaseous phase that causes C* to change.  
+Temporary fix is dividing kLa by 10."""
 kla_ratio = {
   'dO2':1,
-  'dCO2':0.95,
+  'dCO2':0.95/10,
   'dCO':1.03,
   }
+
+
+for variable in [molecular_weight, cells, actuation, instrumentation]:
+  helper_functions.simplify(variable)
+  if skip_units:
+    helper_functions.remove_units(variable)

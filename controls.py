@@ -35,19 +35,21 @@ class feed_strategy:
     self.initial_volume = initial_volume.simplified
     self.seeding_density = target_seeding_density.simplified
     self.sp = set_point.simplified
+    self.interval = sample_interval.simplified
     
     
     if param.skip_units:
       self.initial_volume = float(self.initial_volume)
       self.seeding_density = float(self.seeding_density)
       self.sp = float(self.sp)
-      self.cpp = float(self.cpp)
+      self.interval = float(self.interval)
+
     
     self.seed_time = initial_time
     self.VCD = self.seeding_density
     self.last_VCD = self.seeding_density
     self.last_volume = self.initial_volume
-    self.interval = sample_interval
+    
  
     self.ignore_first = 0
     self.cpp = cpp
@@ -80,6 +82,7 @@ class basic_fed_batch_feed(feed_strategy):
     super().__init__(*args, **kwargs)
     self.addition_rate = Q(0, 'g/min').simplified
     self.last_time = self.seed_time-np.timedelta64(1, 'D')
+    self.expected_density = param.expected_cc_density.simplified
     
     if feed_mixture == None:
       feed_mixture = {'glucose':Q(500, 'g/L').simplified}
@@ -87,27 +90,32 @@ class basic_fed_batch_feed(feed_strategy):
       feed_mixture = feed_mixture.copy()
       for key in feed_mixture:
         feed_mixture[key] = feed_mixture[key].simplified
+    self.actuation = [actuation.peristaltic(feed_mixture)]
+    
     if param.skip_units: 
       helper_functions.remove_units(feed_mixture)
     self.feed_mixture = feed_mixture
-    self.actuation = [actuation.peristaltic(feed_mixture)]
+    
     
     if param.skip_units:
       self.addition_rate = float(self.addition_rate)
       for component in self.feed_mixture:
         self.feed_mixture[component] = float(self.feed_mixture[component])
+      self.expected_density = float(self.expected_density)
     
   def update_control(self, obs):
-    volume = obs['mass']/param.expected_cc_density
+    volume = obs['mass']/self.expected_density
     if self.ignore_first:
       if not self.cpp in obs:
         raise ValueError('CPP not included in assays!')
-      time_since_last_obs = Q((obs['time']-self.last_time)/np.timedelta64(1, 'm'), 'min')
+      time_since_last_obs = (obs['time']-self.last_time)/np.timedelta64(1, 's')
+      if not param.skip_units:
+        time_since_last_obs *= Q(1, 's')
       average_VCD = (obs['VCD']+self.last_VCD)/2
       average_volume = (self.last_volume+volume)/2
       # CSCR = (self.addition_rate - \
       #   (new_mass - self.last_mass)/time_since_last_obs)/average_VCD/self.volume
-      CSCR = (obs[self.cpp]*volume - self.last_concentration*self.last_volume - \
+      CSCR = -(obs[self.cpp]*volume - self.last_concentration*self.last_volume - \
               self.addition_rate * time_since_last_obs) /\
         (average_VCD * average_volume * time_since_last_obs)
       predicted_VCD = 2*obs['VCD']-average_VCD #Maybe update this later....
@@ -116,6 +124,8 @@ class basic_fed_batch_feed(feed_strategy):
         self.interval + predicted_VCD*CSCR*predicted_volume
       if self.addition_rate < 0:
         self.addition_rate *= 0
+    # if self.addition_rate / self.feed_mixture[self.cpp] < 3e-12:
+    #   pdb.set_trace()
 
     self.actuation[0].set_point = self.addition_rate / self.feed_mixture[self.cpp]
     self.last_VCD = obs['VCD']
@@ -124,7 +134,9 @@ class basic_fed_batch_feed(feed_strategy):
     self.last_concentration = obs[self.cpp]
     self.ignore_first = 1
     
-    return {'glucose_solution':self.actuation[0].set_point}
+    
+    return {'glucose_solution':self.actuation[0].set_point,
+            'glucose_feed':self.addition_rate,}
 
 class dynamic_perfusion_feed(feed_strategy):
   """Perfusion reactor.  Adds a constant amount of nutrient in order to maintain
@@ -235,7 +247,7 @@ class pH:
   def step(self, obs, offline):
     PID_out = self.PID.step(obs['pH'])
     self.actuation[0].set_point = PID_out/100 * (self.max_CO2-self.min_CO2)+self.min_CO2
-    print('pH', obs['pH'], PID_out)
+    # print('pH', obs['pH'], PID_out)
     return {'pH_PID':PID_out}
 
 class temperature:

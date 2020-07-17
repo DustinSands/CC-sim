@@ -24,10 +24,10 @@ a variance between randomly generated cell lines.
 
 Tolerance represents the point at which 10% of the cells die a day."""
 global_cell_line_mean_parameters = \
-   {'growth_osmo': 330, 
-    'growth_osmo_range':20,
-    'mOsm':350,
-    'mOsm_tolerance':60,
+   {'growth_osmo': Q(330, 'mol/m**3'),
+    'growth_osmo_range':Q(20, 'mol/m**3'),
+    'mOsm':Q(350, 'mol/m**3'),
+    'mOsm_tolerance':Q(60, 'mol/m**3'),
     'max_production_rate':Q(3.33e-13, 'mmol/ce/d'),
     'shear_tolerance' : Q(3500, '1/s'),
     'shear_sensitivity':Q(0.001, 's'),
@@ -59,10 +59,10 @@ global_cell_line_mean_parameters = \
     }
 # The standard deviation of each randomly generated variable
 global_cell_line_STD_parameters = \
-   {'growth_osmo': 12, 
-    'growth_osmo_range':10,
-    'mOsm':15,
-    'mOsm_tolerance':20,
+   {'growth_osmo': Q(12,  'mol/m**3'),
+    'growth_osmo_range':Q(10, 'mol/m**3'),
+    'mOsm':Q(15, 'mol/m**3'),
+    'mOsm_tolerance':Q(20, 'mol/m**3'),
     'max_production_rate':Q(1e-13, 'mmol/ce/d'),
     'shear_tolerance':Q(500, '1/s'),
     'shear_sensitivity':Q(0.0005, 's'),
@@ -139,16 +139,18 @@ class cell_wrapper:
     self.dying_cells = Q(0., 'ce')
     self.dead_cells = Q(0., 'ce')
     self.molarity = {component:Q(0., 'mM').simplified for component in param.cell_components}
+    self.one_cell = Q(1, 'ce')
     
     if param.skip_units:
       self.viable_cells = float(self.viable_cells)
       self.dying_cells = 0
       self.dead_cells = 0
       self.molarity = {component:0. for component in param.cell_components}
+      self.one_cell = 1
       
     self.diameter = self.cp['growth_diameter']
     self.volume = math.pi/6*self.diameter**3
-    self.growth_per_tick = float((param.q_res/self.cp['growth_rate'])*self.volume)
+    self.growth_per_tick = param.step_size/self.cp['growth_rate']*self.volume
     self.out_of_range = {}
     self.death_transition_ratio = param.resolution/self.cp['delayed_death_transition']
     self.extinction_conversion = np.timedelta64(1, 'D') / param.resolution*self.p['extinction_coeff']
@@ -168,8 +170,8 @@ class cell_wrapper:
     sensitivity = self.cp['component_A_sensitivity']
     tolerance = self.cp['component_A_tolerance']
 
-    comp_A_inhibition = 1/(1+math.exp((-sensitivity*(env['component_A']-
-                                                         tolerance-3/sensitivity)).simplified))
+    comp_A_inhibition = 1/(1+math.exp(-sensitivity*(env['component_A']-
+                                                         tolerance-3/sensitivity)))
     osmo_inhibition = 1/(1+math.exp(-1/self.cp['growth_osmo_range']*\
       (env['mOsm']-self.cp['growth_osmo']-3*self.cp['growth_osmo_range'])))
     total_inhibition = comp_A_inhibition + osmo_inhibition - \
@@ -239,16 +241,13 @@ class cell_wrapper:
   def metabolism(self, env):
     """Calculate usage of resources by first finding limiting reactant, then
     removing resources used and creating biomass / product.
-    
-    Future update: include iron for biomass only."""
+    """
     metabolism_rate = self.cp['metabolism_rate']*0.19*math.exp(0.0458*env['temperature'])
 
 
-    
-    
     # Equations from solving differential eqs from mass balances
     MT_coeff = math.pi*self.diameter**2*self.p['mass_transfer_rate']
-    time_coeff = 1-math.exp(-MT_coeff*param.q_res/self.volume)
+    time_coeff = 1-math.exp(-MT_coeff*param.step_size/self.volume)
     limit_coeff = MT_coeff / time_coeff / metabolism_rate
   
     aa_limiting_rate = limit_coeff / (self.p['aa_consumption']*self.volume) *\
@@ -264,15 +263,20 @@ class cell_wrapper:
                         glucose_limiting_rate, 
                         1)
     if limiting_rate < 0:
-      print('Negative rate!')
-      print(limiting_rate)
-      print(aa_limiting_rate, O2_limiting_rate, glucose_limiting_rate)    
+      print('Negative rate! This probably indicates a negative concentration.\
+            Entering debug mode.')
+      pdb.set_trace()  
     mass_transfer = {}
     consumption = {}
     ending_molarity = {}
-    for component in param.liquid_components:
-      mass_transfer[component] = Q(0, 'mol/min')
-      consumption[component] = Q(0, 'mol/min')
+    if param.skip_units:
+      for component in param.liquid_components:
+        mass_transfer[component] = 0
+        consumption[component] = 0
+    else:
+      for component in param.liquid_components:
+        mass_transfer[component] = Q(0, 'mol/s')
+        consumption[component] = Q(0, 'mol/s')
       
     consumption['amino_acids'] = \
       limiting_rate * metabolism_rate * self.p['aa_consumption']*self.volume
@@ -284,8 +288,10 @@ class cell_wrapper:
     for component in param.cell_components:
       ending_molarity[component] = self.molarity[component]+time_coeff*\
         (env[component]-self.molarity[component]-consumption[component]/MT_coeff)
-      mass_transfer[component]=consumption[component]+self.volume/param.q_res* \
+      mass_transfer[component]=consumption[component]+self.volume/param.step_size* \
         (ending_molarity[component] - self.molarity[component])
+      if ending_molarity[component] < 0:
+        pdb.set_trace()
     
     self.molarity = ending_molarity
 
@@ -307,11 +313,11 @@ class cell_wrapper:
       sensitivity = self.cp[variable+'_sensitivity']
       tolerance = self.cp[variable+'_tolerance']
       # print('CE', variable, env[variable], sensitivity, tolerance)
-      self.out_of_range[variable] = 1/(1+math.exp((
-        -sensitivity*(env[variable]-1/sensitivity*3-tolerance)).simplified))
+      self.out_of_range[variable] = 1/(1+math.exp(
+        -sensitivity*(env[variable]-1/sensitivity*3-tolerance)))
     for variable in ['pH', 'dO2', 'mOsm', 'temperature']:
       tolerance = self.cp[variable+'_tolerance']
-      print('CE', variable, env[variable], self.cp[variable], tolerance)
+      # print('CE', variable, env[variable], self.cp[variable], tolerance)
       self.out_of_range[variable] = 1-1/\
         math.exp((abs(env[variable]-self.cp[variable])/tolerance)**2)
 
@@ -326,8 +332,9 @@ class cell_wrapper:
     """
     # mass_transfer = self.calc_mass_transfer(env)
     IGG_production, mass_transfer = self.metabolism(env)
-    
-    living_cells = Q(sum(self.delayed_death_buckets), 'ce')+self.dying_cells + self.viable_cells
+    delayed_cells = sum(self.delayed_death_buckets)
+    if not param.skip_units: delayed_cells *= self.one_cell
+    living_cells = delayed_cells+self.dying_cells + self.viable_cells
     cells['viability'] = living_cells / (living_cells+self.dead_cells)*100
     cells['living_cells'] = living_cells
     cells['total_cells'] = living_cells+self.dead_cells
@@ -344,13 +351,13 @@ class cell_wrapper:
       self.out_of_range['pH']*0.4
     basic_fraction = self.out_of_range['component_B']*0.25+self.out_of_range['dO2']*0.5+\
       self.out_of_range['temperature']*-0.1
-    self.molarity['IGG_a'] += acidic_fraction * IGG_production / self.volume * param.q_res
-    self.molarity['IGG_b'] += basic_fraction * IGG_production/ self.volume* param.q_res
-    self.molarity['IGG_n'] += (1-basic_fraction - acidic_fraction) * IGG_production/ self.volume* param.q_res
+    self.molarity['IGG_a'] += acidic_fraction * IGG_production / self.volume * param.step_size
+    self.molarity['IGG_b'] += basic_fraction * IGG_production/ self.volume* param.step_size
+    self.molarity['IGG_n'] += (1-basic_fraction - acidic_fraction) * IGG_production/ self.volume* param.step_size
     
     
     #shock - not implemented
-    cells['mass_transfer'] = {component:value*self.viable_cells/Q(1, 'ce') for 
+    cells['mass_transfer'] = {component:value*self.viable_cells/self.one_cell for 
                               component, value in mass_transfer.items()}
     cells['mass_transfer']['component_A'] = -self.viable_cells * self.p['component_A_production_rate']
 

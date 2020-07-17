@@ -59,10 +59,8 @@ no_cells = {'mass_transfer':{parameter:Q(0, 'mol/min').simplified for parameter 
   }
 
 if param.skip_units:
-  for key in initial_actuation:
-    initial_actuation[key] = float(initial_actuation[key].simplified)
-  for key in no_cells:
-    no_cells[key] = float(no_cells[key].simplified)
+  helper_functions.remove_units(initial_actuation)
+  helper_functions.remove_units(no_cells)
 
 
         
@@ -72,6 +70,7 @@ def create_config(num_experiments):
   initial_volume = Q(0.5, 'L')
   seed_density = Q(1, 'e6c/ml')
   starting_cells = (initial_volume*seed_density).simplified
+  random.seed(1)
   cell_line = cell_sim.gen_cell_line()
   assay_setup = [assays.BGA(), 
                  assays.cell_counter(),
@@ -82,7 +81,7 @@ def create_config(num_experiments):
                    'initial_volume':initial_volume,
                    'sample_interval':Q(24, 'h'), 
                    'cpp':'glucose', 
-                   'set_point':Q(2, 'g/L'), 
+                   'set_point':Q(1.5, 'g/L'), 
                    'initial_time': start_time, 
                    'target_seeding_density':Q(1, 'e5c/ml')}
   aeration_setup = {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
@@ -151,7 +150,7 @@ def run_experiments(config, duration):
         offline = True
         day[br] += 1
         print(f'Day {day[br]}!')
-        if day[br] == days:
+        if day[br]+1 == days:
           next_offline_step[br] = total_steps - 1
         else:
           next_offline_step[br] = round(steps_per_day*(day[br]+1) +\
@@ -171,33 +170,41 @@ def run_experiments(config, duration):
       # cells_output = cell_wrapper[br](environment)
       
       if offline == True:
-        metrics[br][day[br]].update(control_metrics)
-        metrics[br][day[br]].update(obs[br])
-        plot_glucose_VCD(metrics[br], days)
+        metrics[br][day[br]].update(helper_functions.scale_assays(control_metrics))
+        metrics[br][day[br]].update(helper_functions.scale_assays(obs[br]))
+        dual_plot(metrics[br], 'viability', 'VCD')
+        dual_plot(metrics[br], 'glucose', 'glucose_feed')
+  
+  return metrics
        
         
       
       #Record important data
-def plot_glucose_VCD(metrics, total_days):
-  y1_param = 'glucose'
-  y2_param = 'VCD'
+def dual_plot(metrics, y1_param, y2_param, total_days=14):
   print(metrics)
   x = [(metrics[day]['time']-metrics[0]['time'])/np.timedelta64(1,'D')
-       for day in range(total_days) if 'time' in metrics[day]]
-  y1 = [metrics[day][y1_param].rescale('g/L') for day in range(total_days) if y1_param in metrics[day]]
-  y2 = [metrics[day][y2_param].rescale(q.CD) for day in range(total_days) if y2_param in metrics[day]]
+       for day in range(len(metrics)) if 'time' in metrics[day]]
+  y1 = [metrics[day][y1_param] for day in range(len(metrics)) if y1_param in metrics[day]]
+  y2 = [metrics[day][y2_param] for day in range(len(metrics)) if y2_param in metrics[day]]
   print(x, y1, y2)
   #Plot two sets of data
   fig, ax1 = plt.subplots()
   ax1.set_xlabel('Day')
-  ax1.set_ylabel(y1_param+f' {y1[0].dimensionality}', color = 'red')
+  if type(y1[0]) ==Q:
+    ax1.set_ylabel(y1_param+f' {y1[0].dimensionality}', color = 'red')
+  else:
+    ax1.set_ylabel(y1_param, color = 'red')
+
   ax1.plot(x, y1, color = 'red')
   ax1.set_xlim([0, total_days])
   # ax1.set_ylim(top=80)
 
   ax2 = ax1.twinx()
   # ax2.set_ylim(bottom=-1)
-  ax2.set_ylabel(y2_param+f' {y2[0].dimensionality}', color = 'blue')
+  if type(y2[0]) ==Q:
+    ax2.set_ylabel(y2_param+f' {y2[0].dimensionality}', color = 'blue')
+  else:
+    ax2.set_ylabel(y2_param, color = 'blue')
   ax2.plot(x, y2, color='blue')
   fig.tight_layout()
   fig.dpi = 200
@@ -207,7 +214,8 @@ def plot_glucose_VCD(metrics, total_days):
 
 def run_sim():
   config = create_config(1)
-  run_experiments(config, np.timedelta64(14, 'D'))
+  metrics = run_experiments(config, np.timedelta64(14, 'D'))
+  return metrics
   
 if __name__ == '__main__':
-  run_sim()
+  metrics = run_sim()
