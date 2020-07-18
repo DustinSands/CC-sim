@@ -17,7 +17,8 @@ from quantities import Quantity as Q
 import quantities as q
 from matplotlib import pyplot as plt
 
-import actuation, assays, cell_sim, controls, bioreactor, param, helper_functions
+import param
+import actuation, assays, cell_sim, controls, bioreactor, helper_functions
 
 example_media = {
             'NaHCO3':Q(24., 'mM'), 
@@ -28,6 +29,7 @@ example_media = {
            # 'lactate':Q(, 'g/L'), 
            'glucose':Q(8.39, 'mM'), 
            'amino_acids':Q(61.55, 'mM'),
+           'amino_acids':Q(150, 'mM'),
            'acetic_acid':Q(3.15, 'mM'),
            'butyric_acid':Q(0.76, 'mM'),
            'citric_acid':Q(0.64, 'mM'),

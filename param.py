@@ -8,7 +8,7 @@ import numpy as np
 import quantities as q
 from quantities import Quantity as Q
 
-import helper_functions
+
 
 #The simulation resolution
 resolution = np.timedelta64(1, 'm')
@@ -133,13 +133,12 @@ instrumentation={
   }
 
 cells = {
-  'component_A_production_rate':Q(1.e-17, 'mol/ce/day'),
+  'component_A_production_rate':Q(1.5e-17, 'mol/ce/day'),
   'extinction_coeff': 200.,
-  'mass_transfer_rate': Q(6.4e-7, 'm/s'), # 1.1e-11 is 0.2/min for 20um cell
-  'O2_consumption':Q(0.0015,'M/min'),  # 5 g/min/L
+  'mass_transfer_rate': Q(6.4e-7, 'm/s'), # "kLa" of 12/min for cells
+  'dO2_consumption':Q(0.0015,'M/min'),  # 5 g/min/L
   'glucose_consumption':Q(1.6667e-13,'mol/hour'),
-  # 'glucose_consumption':Q(1.6667e-13,'mol/hour'), #3e-11 g/h per cell
-  'aa_consumption':Q(1.,'M/day'), # 150 g/day/L
+  'aa_consumption':Q(2.e-12,'mol/day'), # 150 g/day/L
   }
 
 actuation = {
@@ -171,6 +170,7 @@ kla_ratio = {
 
 
 for variable in [molecular_weight, cells, actuation, instrumentation]:
+  import helper_functions
   helper_functions.simplify(variable)
   if skip_units:
     helper_functions.remove_units(variable)

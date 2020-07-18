@@ -175,21 +175,19 @@ class bioreactor:
         #   pdb.set_trace()
         self.mole[component] = transfer_coeff*self.mole[component] + (1-transfer_coeff)*\
           (C_star*self.working_volume - cells['mass_transfer'][component]/kLa)
-        if self.mole[component] < 0:
-          print('Negative component! Entering Debug')
-          pdb.set_trace()
-
       else: 
         transfer_rate = actuation[component]
         # if component =='glucose':
         #   print('BR', component, transfer_rate, self.mole[component])
         self.mole[component] += (transfer_rate - cells['mass_transfer'][component]) * param.step_size
-        if self.mole[component] < 0:
-          print('Negative component! Entering Debug')
-          pdb.set_trace()
+      if self.mole[component] < -1:
+        """Slightly negative values are just rounding errors
+        More-than-slightly negative values could be high-density cells suddenly
+        running out of a component with no input."""
+        print('Negative component! Entering Debug')
+        pdb.set_trace()
     self.working_volume += actuation['liquid_volume']*param.step_size
-    
-    
+
     #Temperature
 
     heat_transfer = actuation['heat'] + \

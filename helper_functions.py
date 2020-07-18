@@ -91,7 +91,7 @@ base_unit_lookup = {
   'BGA_dCO2': 'mol/m**3', 
   'glucose':  'kg/m**3', 
   'IGG': 'kg/m**3', 
-  'viability':'percent',
+  'viability':'dimensionless',
   'glucose_feed':'kg/s',
   }
 

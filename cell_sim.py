@@ -141,6 +141,7 @@ class cell_wrapper:
     self.molarity = {component:Q(0., 'mM').simplified for component in param.cell_components}
     self.one_cell = Q(1, 'ce')
     
+    
     if param.skip_units:
       self.viable_cells = float(self.viable_cells)
       self.dying_cells = 0
@@ -156,6 +157,7 @@ class cell_wrapper:
     self.extinction_conversion = np.timedelta64(1, 'D') / param.resolution*self.p['extinction_coeff']
     self.hour_countdown = np.timedelta64(1, 'h')/param.resolution
     self.delayed_death_buckets = [0.]*round(self.cp['death_delay'])
+    self.IGG_conversion_ratio = float(param.molecular_weight['amino_acids']/param.molecular_weight['IGG'])
     
   def calc_growth(self, env, rate):
     """Calculate where the cell is expending its energy and what stage it is 
@@ -250,9 +252,9 @@ class cell_wrapper:
     time_coeff = 1-math.exp(-MT_coeff*param.step_size/self.volume)
     limit_coeff = MT_coeff / time_coeff / metabolism_rate
   
-    aa_limiting_rate = limit_coeff / (self.p['aa_consumption']*self.volume) *\
+    aa_limiting_rate = limit_coeff / (self.p['aa_consumption']) *\
       (self.molarity['amino_acids']*(1-time_coeff)+env['amino_acids']*time_coeff)
-    O2_limiting_rate = limit_coeff / (self.p['O2_consumption']*self.volume) *\
+    O2_limiting_rate = limit_coeff / (self.p['dO2_consumption']*self.volume) *\
       (self.molarity['dO2']*(1-time_coeff)+env['dO2']*time_coeff)
     glucose_limiting_rate = limit_coeff / self.p['glucose_consumption'] *\
       (self.molarity['glucose']*(1-time_coeff)+env['glucose']*time_coeff)
@@ -263,9 +265,10 @@ class cell_wrapper:
                         glucose_limiting_rate, 
                         1)
     if limiting_rate < 0:
-      print('Negative rate! This probably indicates a negative concentration.\
-            Entering debug mode.')
-      pdb.set_trace()  
+      if limiting_rate < -10:
+        print('Verrrry negative rate.  Probably a bug.  Entering debug.')
+        pdb.set_trace()
+      limiting_rate = 0 
     mass_transfer = {}
     consumption = {}
     ending_molarity = {}
@@ -279,24 +282,29 @@ class cell_wrapper:
         consumption[component] = Q(0, 'mol/s')
       
     consumption['amino_acids'] = \
-      limiting_rate * metabolism_rate * self.p['aa_consumption']*self.volume
-    consumption['O2'] = \
-      limiting_rate * metabolism_rate * self.p['O2_consumption']*self.volume
+      limiting_rate * metabolism_rate * self.p['aa_consumption']
+    consumption['dO2'] = \
+      limiting_rate * metabolism_rate * self.p['dO2_consumption']*self.volume
     consumption['glucose'] = \
       limiting_rate * metabolism_rate * self.p['glucose_consumption']
     
+    """Occassionally there will be an ending molarity that is negative.  This is
+    just a rounding error.
+    If it's significantly negative, it's probably negative in the BR."""
     for component in param.cell_components:
       ending_molarity[component] = self.molarity[component]+time_coeff*\
         (env[component]-self.molarity[component]-consumption[component]/MT_coeff)
+      (1-time_coeff)*self.molarity[component]+time_coeff*(env[component]-consumption[component]/MT_coeff)
       mass_transfer[component]=consumption[component]+self.volume/param.step_size* \
         (ending_molarity[component] - self.molarity[component])
-      if ending_molarity[component] < 0:
+      if ending_molarity[component] < -1:
         pdb.set_trace()
+
     
     self.molarity = ending_molarity
 
     # Perhaps change this at some point...
-    IGG_production = consumption['amino_acids']
+    IGG_production = consumption['amino_acids']*self.IGG_conversion_ratio
     
     self.calc_death(env, limiting_rate, metabolism_rate)
     self.calc_growth(env, metabolism_rate*limiting_rate)
