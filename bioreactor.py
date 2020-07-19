@@ -180,14 +180,15 @@ class bioreactor:
         # if component =='glucose':
         #   print('BR', component, transfer_rate, self.mole[component])
         self.mole[component] += (transfer_rate - cells['mass_transfer'][component]) * param.step_size
-      if self.mole[component] < -1:
+      if self.mole[component] < -0.01*self.volume:
         """Slightly negative values are just rounding errors
         More-than-slightly negative values could be high-density cells suddenly
         running out of a component with no input."""
         print('Negative component! Entering Debug')
         pdb.set_trace()
+        
     self.working_volume += actuation['liquid_volume']*param.step_size
-
+    # print(cells['mass_transfer']['dO2'], cells['mass_transfer']['dCO2'])
     #Temperature
 
     heat_transfer = actuation['heat'] + \
@@ -216,7 +217,7 @@ class bioreactor:
   def total_moles(self):
     if param.skip_units:
       total = 0
-    else: total = Q(0., 'mmol').simplified
+    else: total = Q(0., 'mol/m**3')
     for component in self.mole:
       total += self.mole[component]
     return total
@@ -239,6 +240,7 @@ class bioreactor:
         net_charge -= self.mole[species]/self.working_volume/molar
     pH = -math.log10((-net_charge/2+math.sqrt((net_charge/2)**2+\
       10**-14+10**-6.36*1.0017*self.mole['dCO2']/self.working_volume/molar)))
+    # print(pH, self.mole['dCO2']/self.working_volume)
     return pH
   
   def create_kla_function(self):

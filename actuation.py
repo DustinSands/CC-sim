@@ -73,7 +73,7 @@ class MFC:
     self.broken_mult = 1
     self.set_point = Q(0, 'L/min').simplified
     self.component = component
-    self.break_chance = float((break_chance*param.q_res).simplified)
+    self.break_chance = float((break_chance*param.q_res).simplified)*param.allow_breaking
     
     if param.skip_units:
       self.set_point = 0
@@ -108,7 +108,7 @@ class peristaltic():
     self.broken_mult = 1
     self.set_point = Q(0, 'ml/min').simplified
     self.source = mixture(mixture_components, source_size)
-    self.break_chance = float((break_chance*param.q_res).simplified)
+    self.break_chance = float((break_chance*param.q_res).simplified)*param.allow_breaking
     
     if param.skip_units:
       self.set_point = float(self.set_point)
@@ -145,7 +145,7 @@ class agitator:
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
     self.set_point = RPS.simplified
-    self.break_chance = float((break_chance*param.q_res).simplified)
+    self.break_chance = float((break_chance*param.q_res).simplified)*param.allow_breaking
     
     if param.skip_units:
       self.set_point = float(self.set_point)

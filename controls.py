@@ -193,14 +193,14 @@ class aeration:
   adds oxygen to max oxygen.
   """
   def __init__(self, setpoint, 
-               min_air = Q(0.05, 'L/min'), 
+               min_air = Q(0.01, 'L/min'), 
                max_air = Q(0.2, 'L/min'), 
                max_O2 = Q(0.1, 'L/min')):
     """max_air and max_O2 should be in volumetric flow rates."""
     
     self.sp = setpoint
     
-    self.PID = PID(0.1, Q(1/15, '1/min'), Q(3, 'min'), 
+    self.PID = PID(0.05, Q(0.02, '1/min'), Q(0.05, 'min'), 
                    setpoint, 5)
     self.actuation = [actuation.MFC('air'), actuation.MFC('O2'), actuation.agitator(Q(300/60., '1/s'))]
     self.max_air = max_air.simplified

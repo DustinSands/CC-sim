@@ -63,7 +63,7 @@ class O2_probe(probe):
     self.sys_error = 5
     self.value = 100
     self.one_point(time)  #auto one-point
-    self.conversion_constant = (1/Q(0.0021, 'mM')).simplified
+    self.conversion_constant = (1/Q(0.00217, 'mM')).simplified
     if param.skip_units:
       self.conversion_constant = float(self.conversion_constant)
     
@@ -132,7 +132,7 @@ class temperature_probe(machine):
   def read_value(self, environment, cells):
     # time_delta is time since last calibration
     random_error = random.gauss(0, self.p['random_sigma'])
-    value = environment['temperature']+self.sys_error
+    value = environment['temperature']+self.sys_error+random_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
     return {'temperature': self.value}
     
@@ -222,14 +222,33 @@ class cell_counter(machine):
     viability = cells['living_cells']/cells['total_cells']+random_error+self.via_sys_error
     return {'VCD': VCD, 'cell_diameter': cell_size, 'viability': viability}
 
-
+class osmo(machine):
+  """Temperature probes are both reliable and accurate.  
+  
+  Assumed no drift.
+  """
+  # Net drift: < 0.1 pH/week
+  p = param.instrumentation['Osmo']
+  def __init__(self, **kwargs):
+    super().__init__(**kwargs)
+    #Large offset as probe isn't yet calibrated
+    self.units = Q(1, 'mol/m**3')
+    if param.skip_units:
+      self.units = 1
+    self.sys_error = random.gauss(0, self.p['systematic_sigma'])*self.units
+  
+  def read_value(self, environment, cells):
+    # time_delta is time since last calibration
+    random_error = random.gauss(0, self.p['random_sigma'])*self.units
+    value = environment['mOsm']+self.sys_error+random_error
+    return {'mOsm': value}
 
   
 class wrapper:
   """Main class that performs all the assays."""
-  def __init__(self, BGA_instance, cell_counter,  start_time, bioHT=None,
+  def __init__(self, osmo, BGA_instance, cell_counter,  start_time, bioHT=None,
                bioHT_list=None, pH = True, O2 = True, temp = True,
-               use_scale = True):
+               use_scale = True, ):
     """Experimental_setup should take the form of:
       BGA: instance of BGA to calibrate against
       bioHT: instance of bioHT
@@ -248,6 +267,7 @@ class wrapper:
         raise ValueError('Need instance of bioHT to run assays!')
       self.offline_assays.append(lambda env, cell, assay = assay:bioHT.read_value(assay, env, cell))
     if cell_counter != None: self.offline_assays.append(cell_counter.read_value)
+    if osmo != None: self.offline_assays.append(osmo.read_value)
     if pH: self.online_assays.append(pH_probe(start_time, BGA_instance).read_value)
     if O2: self.online_assays.append(O2_probe(start_time, BGA_instance).read_value)
     if temp: self.online_assays.append(temperature_probe().read_value)

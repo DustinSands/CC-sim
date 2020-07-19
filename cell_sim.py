@@ -135,7 +135,7 @@ class cell_wrapper:
         if param.skip_units:
           cell_line[entry] = float(cell_line[entry])
     self.cp = cell_line
-    self.viable_cells = seed_cells.simplified
+    self.viable_cells = seed_cells.simplified*random.gauss(1, 0.05)
     self.dying_cells = Q(0., 'ce')
     self.dead_cells = Q(0., 'ce')
     self.molarity = {component:Q(0., 'mM').simplified for component in param.cell_components}
@@ -224,6 +224,7 @@ class cell_wrapper:
       print(env)
       print(self.cp)
       extinction_rate = 1
+      pdb.set_trace()
     #If death rate is low enough, the death is delayed.  Using a logistic
     #curve to calculate ratio
     instant_death_ratio = 1/(1+math.exp(-20*(extinction_rate - 0.3)))
@@ -265,9 +266,6 @@ class cell_wrapper:
                         glucose_limiting_rate, 
                         1)
     if limiting_rate < 0:
-      if limiting_rate < -10:
-        print('Verrrry negative rate.  Probably a bug.  Entering debug.')
-        pdb.set_trace()
       limiting_rate = 0 
     mass_transfer = {}
     consumption = {}
@@ -287,6 +285,9 @@ class cell_wrapper:
       limiting_rate * metabolism_rate * self.p['dO2_consumption']*self.volume
     consumption['glucose'] = \
       limiting_rate * metabolism_rate * self.p['glucose_consumption']
+    consumption['dCO2'] = -consumption['dO2'] * self.cp['respiratory_quotient']
+      
+    
     
     """Occassionally there will be an ending molarity that is negative.  This is
     just a rounding error.
@@ -300,7 +301,6 @@ class cell_wrapper:
       if ending_molarity[component] < -1:
         pdb.set_trace()
 
-    
     self.molarity = ending_molarity
 
     # Perhaps change this at some point...
@@ -368,7 +368,7 @@ class cell_wrapper:
     cells['mass_transfer'] = {component:value*self.viable_cells/self.one_cell for 
                               component, value in mass_transfer.items()}
     cells['mass_transfer']['component_A'] = -self.viable_cells * self.p['component_A_production_rate']
-
+    
     
     return cells
   

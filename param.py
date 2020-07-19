@@ -18,6 +18,10 @@ resolution = np.timedelta64(1, 'm')
 skip_units = 1
 
 
+# Allows things like peristaltic pumps to break (generally 1 / yr)
+allow_breaking = 0
+
+
 # Same as simulation resolution, but in quantities package
 q_intermediate = resolution / np.timedelta64(1, 'm')
 q_res = Q(q_intermediate, 'min').simplified
@@ -57,7 +61,7 @@ liquid_components = [*cell_components, 'LDH', 'lactate',
                       ]
 gas_components = ['CO2', 'O2', 'air']
 positively_charged = ['Na', 'K']
-negatively_charged = ['Cl']
+negatively_charged = ['Cl', 'lactate']
 
 molecular_weight = {
   'glucose':Q(180.156, 'g/mol'),
@@ -129,14 +133,18 @@ instrumentation={
     },
   'Scale':{
     'random_error_sigma':Q(0.02, 'g'), #grams
-    }
+    },
+  'Osmo':{
+    'random_sigma':2,
+    'systematic_sigma':1,
+    },
   }
 
 cells = {
-  'component_A_production_rate':Q(1.5e-17, 'mol/ce/day'),
+  'component_A_production_rate':Q(8e-17, 'mol/ce/day'),
   'extinction_coeff': 200.,
-  'mass_transfer_rate': Q(6.4e-7, 'm/s'), # "kLa" of 12/min for cells
-  'dO2_consumption':Q(0.0015,'M/min'),  # 5 g/min/L
+  'mass_transfer_rate': Q(1.8e-5, 'm/s'), # "kLa" of 12/min for cells
+  'dO2_consumption':Q(0.050,'M/min'),  # 5 g/min/L
   'glucose_consumption':Q(1.6667e-13,'mol/hour'),
   'aa_consumption':Q(2.e-12,'mol/day'), # 150 g/day/L
   }
@@ -164,7 +172,7 @@ depletation / saturation of CO2 in gaseous phase that causes C* to change.
 Temporary fix is dividing kLa by 10."""
 kla_ratio = {
   'dO2':1,
-  'dCO2':0.95/10,
+  'dCO2':0.95/50,
   'dCO':1.03,
   }
 

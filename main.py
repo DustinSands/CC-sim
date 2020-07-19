@@ -35,10 +35,10 @@ example_media = {
            'citric_acid':Q(0.64, 'mM'),
            'formic_acid':Q(7.6, 'mM'),
            'isovaleric_acid':Q(1.53, 'mM'),
-           'lactate':Q(4.99, 'mM'),
+           # 'lactate':Q(4.99, 'mM'),
            'adenine':Q(0.68, 'mM'),
-           'NaCl':Q(50., 'mM'),
-           'KCl':Q(70., 'mM')}
+           'NaCl':Q(30., 'mM'),
+           'KCl':Q(50., 'mM')}
 
 """The simulation needs initial starting conditions for actual and cells to pass to 
 modules for the first step."""
@@ -72,9 +72,10 @@ def create_config(num_experiments):
   initial_volume = Q(0.5, 'L')
   seed_density = Q(1, 'e6c/ml')
   starting_cells = (initial_volume*seed_density).simplified
-  random.seed(1)
+  random.seed(2)
   cell_line = cell_sim.gen_cell_line()
-  assay_setup = [assays.BGA(), 
+  assay_setup = [assays.osmo(),
+                 assays.BGA(), 
                  assays.cell_counter(),
                  start_time,
                  assays.bioHT(),
@@ -126,14 +127,15 @@ def run_experiments(config, duration):
   environment = [[]]*len(env_wrappers)
   obs = [[]]*len(env_wrappers)
   
-  
+  online_metric_interval = np.timedelta64(10, 'm')/param.resolution
   day = [-1]*len(env_wrappers)
   days = int(round(duration/np.timedelta64(1, 'D')))
   next_offline_step = [5]*len(env_wrappers)
-  metrics = [[{} for x in range(1+days)]for y in range(len(env_wrappers))]
+  metrics = [[]for y in range(len(env_wrappers))]
   
-  #1 hour of equilibration - cell wrapper is skipped
-  for step in range(int(round(steps_per_day / 24))):
+  
+  #1.5 hours of equilibration - cell wrapper is skipped
+  for step in range(int(round(steps_per_day / 16))):
     for br in range(len(env_wrappers)):
       environment[br] = env_wrappers[br].step(actuation_out[br], cells_output[br])
       # Run simulation for a step
@@ -171,48 +173,82 @@ def run_experiments(config, duration):
       
       # cells_output = cell_wrapper[br](environment)
       
+      if offline == True or step%online_metric_interval < 1:
+        metrics[br].append(helper_functions.scale_units(control_metrics))
+        metrics[br][-1].update(helper_functions.scale_units(obs[br]))
+        #CHEATER METRICS
+        metrics[br][-1].update({'dCO2':environment[br]['dCO2']})
       if offline == True:
-        metrics[br][day[br]].update(helper_functions.scale_assays(control_metrics))
-        metrics[br][day[br]].update(helper_functions.scale_assays(obs[br]))
-        dual_plot(metrics[br], 'viability', 'VCD')
-        dual_plot(metrics[br], 'glucose', 'glucose_feed')
+        # dual_plot('pH', 'pH_PID', metrics[br])
+        # dual_plot('dO2', 'aeration_PID', metrics[br])
+        pass
+
   
   return metrics
        
         
       
-      #Record important data
-def dual_plot(metrics, y1_param, y2_param, total_days=14):
-  print(metrics)
-  x = [(metrics[day]['time']-metrics[0]['time'])/np.timedelta64(1,'D')
-       for day in range(len(metrics)) if 'time' in metrics[day]]
-  y1 = [metrics[day][y1_param] for day in range(len(metrics)) if y1_param in metrics[day]]
-  y2 = [metrics[day][y2_param] for day in range(len(metrics)) if y2_param in metrics[day]]
-  print(x, y1, y2)
-  #Plot two sets of data
+
+def dual_plot( y1_param, y2_param, metrics=None, total_days=14):
+  """Plot two different metrics on one graph."""
+  if metrics == None:
+    metrics = default_metrics[0]
   fig, ax1 = plt.subplots()
+  tuples = [((metrics[point]['time']-metrics[0]['time'])/np.timedelta64(1,'D'),
+         metrics[point][y1_param])
+        for point in range(len(metrics)) if y1_param in metrics[point]]
+  if len(tuples) > 0:
+    x1, y1 = list(zip(*tuples))
+  else:
+    x1, y1 = [], []
   ax1.set_xlabel('Day')
-  if type(y1[0]) ==Q:
+  if len(y1)>0 and type(y1[0]) == Q:
     ax1.set_ylabel(y1_param+f' {y1[0].dimensionality}', color = 'red')
   else:
     ax1.set_ylabel(y1_param, color = 'red')
-
-  ax1.plot(x, y1, color = 'red')
+  ax1.plot(x1, y1, color = 'red')
   ax1.set_xlim([0, total_days])
-  # ax1.set_ylim(top=80)
 
+  tuples = [((metrics[point]['time']-metrics[0]['time'])/np.timedelta64(1,'D'),
+          metrics[point][y2_param])
+        for point in range(len(metrics)) if y2_param in metrics[point]]
+  if len(tuples) > 0:
+    x2, y2 = list(zip(*tuples))
+  else:
+    x2, y2 = [], []
+    
   ax2 = ax1.twinx()
-  # ax2.set_ylim(bottom=-1)
-  if type(y2[0]) ==Q:
+  if len(y2)>0 and type(y2[0]) ==Q:
     ax2.set_ylabel(y2_param+f' {y2[0].dimensionality}', color = 'blue')
   else:
     ax2.set_ylabel(y2_param, color = 'blue')
-  ax2.plot(x, y2, color='blue')
+  ax2.plot(x2, y2, color='blue')
   fig.tight_layout()
   fig.dpi = 200
   plt.show()
   plt.close()
-
+  
+def multireactor_plot(param, metrics = None, total_days = 14):
+  """Plots all experiments on the same plot for a single parameter"""
+  if metrics == None:
+    metrics = default_metrics
+  fig, ax1 = plt.subplots()
+  for experiment in range(len(metrics)):
+    tuples = [((metrics[experiment][point]['time']-metrics[0]['time'])/np.timedelta64(1,'D'),
+           metrics[experiment][point][y1_param])
+          for point in range(len(metrics)) if y1_param in metrics[experiment][point]]
+    if len(tuples) > 0:
+      x, y = list(zip(*tuples))
+    else:
+      x, y = [], []
+    ax1.plot(x1, y1, color = 'red')
+  ax1.set_xlabel('Day')
+  if len(y1)>0 and type(y1[0]) == Q:
+    ax1.set_ylabel(y1_param+f' {y1[0].dimensionality}', color = 'red')
+  else:
+    ax1.set_ylabel(y1_param, color = 'red')
+ 
+  ax1.set_xlim([0, total_days])
 
 def run_sim():
   config = create_config(1)
@@ -220,4 +256,9 @@ def run_sim():
   return metrics
   
 if __name__ == '__main__':
-  metrics = run_sim()
+  default_metrics = run_sim()
+  dual_plot('VCD', 'viability')
+  dual_plot('mOsm', 'cell_diameter')
+  dual_plot('pH', 'pH_PID')
+  dual_plot('dO2', 'aeration_PID')
+  dual_plot('glucose', 'glucose_feed')

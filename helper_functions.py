@@ -93,6 +93,9 @@ base_unit_lookup = {
   'IGG': 'kg/m**3', 
   'viability':'dimensionless',
   'glucose_feed':'kg/s',
+  'air':'m**3/s',
+  'CO2':'m**3/s',
+  'O2':'m**3/s',
   }
 
 rescale_unit_lookup = {
@@ -107,10 +110,13 @@ rescale_unit_lookup = {
   'cell_diameter': 'um',
   'viability':'percent',
   'glucose_feed':'g/hour',
+  'air':'ml/min',
+  'CO2':'ml/min',
+  'O2':'ml/min',
   }
 
-def scale_assays(assays):
-  """Adds units and rescales assays for human interaction / visualization."""
+def scale_units(assays):
+  """Adds units and rescales for human interaction / visualization."""
   assays = assays.copy()
   for key in assays:
     if param.skip_units:
