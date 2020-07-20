@@ -21,23 +21,22 @@ import param
 import actuation, assays, cell_sim, controls, bioreactor, helper_functions
 
 example_media = {
-            'NaHCO3':Q(24., 'mM'), 
+            'NaHCO3':Q(22., 'mM'), 
             'dO2':Q(0.21, 'mM'), 
            # 'H2CO3':Q(, 'g/L'), 
            # 'iron':Q(, 'g/L'), 
            # 'LDH':Q(, 'g/L'), 
            # 'lactate':Q(, 'g/L'), 
            'glucose':Q(8.39, 'mM'), 
-           'amino_acids':Q(61.55, 'mM'),
            'amino_acids':Q(150, 'mM'),
            'acetic_acid':Q(3.15, 'mM'),
            'butyric_acid':Q(0.76, 'mM'),
            'citric_acid':Q(0.64, 'mM'),
            'formic_acid':Q(7.6, 'mM'),
            'isovaleric_acid':Q(1.53, 'mM'),
-           # 'lactate':Q(4.99, 'mM'),
+           'lactate':Q(4.99, 'mM'),
            'adenine':Q(0.68, 'mM'),
-           'NaCl':Q(30., 'mM'),
+           'NaCl':Q(40., 'mM'),
            'KCl':Q(50., 'mM')}
 
 """The simulation needs initial starting conditions for actual and cells to pass to 
@@ -72,7 +71,7 @@ def create_config(num_experiments):
   initial_volume = Q(0.5, 'L')
   seed_density = Q(1, 'e6c/ml')
   starting_cells = (initial_volume*seed_density).simplified
-  random.seed(2)
+  random.seed(0)
   cell_line = cell_sim.gen_cell_line()
   assay_setup = [assays.osmo(),
                  assays.BGA(), 
@@ -86,13 +85,24 @@ def create_config(num_experiments):
                    'cpp':'glucose', 
                    'set_point':Q(1.5, 'g/L'), 
                    'initial_time': start_time, 
-                   'target_seeding_density':Q(1, 'e5c/ml')}
+                   'target_seeding_density':Q(10, 'e5c/ml')}
+  concentrated_media = {component:2*concentration for component, concentration
+                        in example_media.items()}
+  secondary_feed_setup = {'feed_mixture':concentrated_media,
+                          'initial_volume':initial_volume,
+                          'sample_interval':Q(24, 'h'), 
+                          'cpp':'mOsm', 
+                          'set_point':Q(300, 'mM'), 
+                          'initial_time': start_time, 
+                          'target_seeding_density':Q(10, 'e5c/ml')}
   aeration_setup = {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
                'max_O2':Q(0.1, 'L/min')}
   control_setup = [(controls.basic_fed_batch_feed,[],fed_batch_setup),
                    (controls.aeration,[],aeration_setup),
                    (controls.temperature, [36], {}),
-                   (controls.pH, [7.15], {})]
+                   (controls.pH, [7.15], {}),
+                   (controls.basic_fed_batch_feed, [], secondary_feed_setup),
+                   ]
 
   media = helper_functions.create_media_as_mole(example_media, initial_volume)
   br_setup = [start_time, media, initial_volume, 36]
@@ -178,6 +188,7 @@ def run_experiments(config, duration):
         metrics[br][-1].update(helper_functions.scale_units(obs[br]))
         #CHEATER METRICS
         metrics[br][-1].update({'dCO2':environment[br]['dCO2']})
+        metrics[br][-1].update({'amino_acids':environment[br]['amino_acids']})
       if offline == True:
         # dual_plot('pH', 'pH_PID', metrics[br])
         # dual_plot('dO2', 'aeration_PID', metrics[br])
@@ -208,6 +219,8 @@ def dual_plot( y1_param, y2_param, metrics=None, total_days=14):
     ax1.set_ylabel(y1_param, color = 'red')
   ax1.plot(x1, y1, color = 'red')
   ax1.set_xlim([0, total_days])
+  if max(y1)/2> min(y1):
+    ax1.set_ylim(-max(y1)/100)
 
   tuples = [((metrics[point]['time']-metrics[0]['time'])/np.timedelta64(1,'D'),
           metrics[point][y2_param])
@@ -216,13 +229,14 @@ def dual_plot( y1_param, y2_param, metrics=None, total_days=14):
     x2, y2 = list(zip(*tuples))
   else:
     x2, y2 = [], []
-    
   ax2 = ax1.twinx()
   if len(y2)>0 and type(y2[0]) ==Q:
     ax2.set_ylabel(y2_param+f' {y2[0].dimensionality}', color = 'blue')
   else:
     ax2.set_ylabel(y2_param, color = 'blue')
   ax2.plot(x2, y2, color='blue')
+  if max(y2)/2>min(y2):
+    ax2.set_ylim(-max(y2)/100)
   fig.tight_layout()
   fig.dpi = 200
   plt.show()
@@ -257,8 +271,11 @@ def run_sim():
   
 if __name__ == '__main__':
   default_metrics = run_sim()
-  dual_plot('VCD', 'viability')
+  dual_plot('viability','VCD' )
   dual_plot('mOsm', 'cell_diameter')
   dual_plot('pH', 'pH_PID')
   dual_plot('dO2', 'aeration_PID')
-  dual_plot('glucose', 'glucose_feed')
+  dual_plot('glucose', 'glucose addition rate')
+  dual_plot('mass', 'mOsm feed rate')
+  dual_plot('mOsm', 'mOsm feed rate')
+  dual_plot('dCO2', 'amino_acids')

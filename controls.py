@@ -36,6 +36,7 @@ class feed_strategy:
     self.seeding_density = target_seeding_density.simplified
     self.sp = set_point.simplified
     self.interval = sample_interval.simplified
+    self.addition_rate = 0*self.sp.units*Q(1,'m**3/s')
     
     
     if param.skip_units:
@@ -43,6 +44,7 @@ class feed_strategy:
       self.seeding_density = float(self.seeding_density)
       self.sp = float(self.sp)
       self.interval = float(self.interval)
+      self.addition_rate = float(self.addition_rate)
 
     
     self.seed_time = initial_time
@@ -80,7 +82,7 @@ class basic_fed_batch_feed(feed_strategy):
   """
   def __init__(self, feed_mixture = None, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.addition_rate = Q(0, 'g/min').simplified
+   
     self.last_time = self.seed_time-np.timedelta64(1, 'D')
     self.expected_density = param.expected_cc_density.simplified
     
@@ -95,10 +97,10 @@ class basic_fed_batch_feed(feed_strategy):
     if param.skip_units: 
       helper_functions.remove_units(feed_mixture)
     self.feed_mixture = feed_mixture
-    
-    
+    self.feed_mixture['mOsm'] = self.actuation[0].source.calc_osmo()    
+    print(self.feed_mixture['mOsm'])
     if param.skip_units:
-      self.addition_rate = float(self.addition_rate)
+      
       for component in self.feed_mixture:
         self.feed_mixture[component] = float(self.feed_mixture[component])
       self.expected_density = float(self.expected_density)
@@ -133,10 +135,9 @@ class basic_fed_batch_feed(feed_strategy):
     self.last_volume = volume
     self.last_concentration = obs[self.cpp]
     self.ignore_first = 1
-    
-    
-    return {'glucose_solution':self.actuation[0].set_point,
-            'glucose_feed':self.addition_rate,}
+
+    return {f'{self.cpp} feed rate':self.actuation[0].set_point,
+            f'{self.cpp} addition rate':self.addition_rate,}
 
 class dynamic_perfusion_feed(feed_strategy):
   """Perfusion reactor.  Adds a constant amount of nutrient in order to maintain
@@ -218,12 +219,12 @@ class aeration:
     
   def step(self, obs, offline):
     PID_out = self.PID.step(obs['dO2'])
-    if PID_out < 80:
-      self.actuation[0].set_point = PID_out/80 * (self.max_air-self.min_air)+self.min_air
+    if PID_out < 50:
+      self.actuation[0].set_point = PID_out/50 * (self.max_air-self.min_air)+self.min_air
       self.actuation[1].set_point =  self.zero
     else:
       self.actuation[0].set_point = self.max_air
-      self.actuation[1].set_point = (PID_out-80)/20 * self.max_O2
+      self.actuation[1].set_point = (PID_out-50)/50 * self.max_O2
     return {'aeration_PID':PID_out}
 
 class pH:

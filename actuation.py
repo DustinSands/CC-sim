@@ -5,7 +5,7 @@ quantities.
 
 Wrapper gets all quantities added and returns an actuation dictionary of rates.
 """
-import random
+import random, pdb
 
 from quantities import Quantity as Q
 import param, helper_functions
@@ -22,15 +22,18 @@ class mixture:
     """
     if reservoir_size ==None:
       reservoir_size = Q(1., 'L').simplified
-    self.molarity = {}
-    self.target_molarity = mixture_components.copy()
+    
+    self.target_molarity = {}
+    self.mixture_definition = mixture_components.copy()
     self.size = reservoir_size.simplified
     
-    for component in self.target_molarity:
-      if self.target_molarity[component].simplified.dimensionality == \
+    for component, concentration in mixture_components.items():
+      if concentration.simplified.dimensionality == \
         Q(1, 'kg/m**3').dimensionality:
-        self.target_molarity[component] = (self.target_molarity[component]/\
+        self.target_molarity[component] = (concentration/\
                                            param.molecular_weight[component]).simplified
+      else: 
+        self.target_molarity[component] = concentration.simplified
     if param.skip_units:
       self.size = float(self.size)
       helper_functions.remove_units(self.target_molarity)
@@ -49,10 +52,19 @@ class mixture:
     
   def replace_source(self):
     """Generates new mixture with fresh errors."""
-    for component, molarity in self.target_molarity.items():
-      error = random.gauss(0, self.p2['component_CV'])
-      self.molarity[component] = molarity*(1+error)
+    self.molarity = helper_functions.create_media(self.target_molarity)
     self.remaining = self.size
+    
+  def calc_osmo(self):
+    """Technically this is using actual osmo instead of osmo from media definiton.
+    However, since osmo machines are fairly accurate, this won't matter much."""
+    if param.skip_units:
+      total = 0
+    else:
+      total = Q(0., 'mol/m**3')
+    for component, molarity in self.molarity.items():
+      total += molarity
+    return total
 
       
     

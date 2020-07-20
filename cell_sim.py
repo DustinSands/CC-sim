@@ -181,9 +181,9 @@ class cell_wrapper:
 
     #Convert some biomass to VCD if target diameter is smaller than current
     #Otherwise, just grow diameter
-    target_diameter = self.cp['growth_diameter'] + total_inhibition*self.cp[
+    self.target_diameter = self.cp['growth_diameter'] + total_inhibition*self.cp[
       'production_diameter_increase']
-    target_volume = math.pi/6*target_diameter**3
+    target_volume = math.pi/6*self.target_diameter**3
     volume_diff = self.volume - target_volume
     if volume_diff > 0:
       if volume_diff > 2*self.growth_per_tick:
@@ -348,6 +348,7 @@ class cell_wrapper:
     cells['total_cells'] = living_cells+self.dead_cells
     cells['diameter'] = self.diameter
     cells['volume'] = self.volume
+    cells['target_diameter'] = self.target_diameter #Cheater metric
     
     """Calculate PQ.  Mostly intended to create deviations in PQ if any of the 
     variables known to affect PQ go out of range for the cell line.  Might be 
