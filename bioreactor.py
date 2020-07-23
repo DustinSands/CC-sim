@@ -97,7 +97,7 @@ class bioreactor:
     self.one_cell = Q(1, 'ce')
     self.solubility_units = Q(1, 's**2*mol/(kg*m**2)') # Solubility / pressure
     self.volumetric_heat_capacity = param.volumetric_heat_capacity
-
+    self.molar = Q(1, 'M').simplified
     
     if param.skip_units == 1:
       self.volume = float(self.volume)
@@ -111,6 +111,7 @@ class bioreactor:
       self.one_cell = 1
       self.solubility_units = float(self.solubility_units)
       self.volumetric_heat_capacity = float(self.volumetric_heat_capacity)
+      self.molar = float(self.molar)
 
     self.agitator = agitator
     self.current_time = start_time
@@ -135,10 +136,10 @@ class bioreactor:
   
   def check_and_update(self, actuation):
     self.current_time += param.resolution
-    if not (actuation == self.old and actuation['liquid_volume'] == 0):
+    if not (actuation == self.old and actuation['liquid_volumetric_rate'] == 0):
       self.old = actuation.copy()
       # Is this in per hour or per minute?
-      self.kla = self.kla_func(actuation['RPS'], actuation['gas_volume'], self.working_volume)
+      self.kla = self.kla_func(actuation['RPS'], actuation['gas_volumetric_rate'], self.working_volume)
       self.gas_percentages = self.calc_gas_percentages(actuation)
       self.update_shear(actuation['RPS'])
       
@@ -180,8 +181,7 @@ class bioreactor:
         # if component =='glucose':
         #   print('BR', component, transfer_rate, self.mole[component])
         self.mole[component] += (transfer_rate - cells['mass_transfer'][component]) * param.step_size
-        
-    self.working_volume += actuation['liquid_volume']*param.step_size
+    self.working_volume += actuation['liquid_volumetric_rate']*param.step_size
     # print(cells['mass_transfer']['dO2'], cells['mass_transfer']['dCO2'])
     #Temperature
 
@@ -224,16 +224,14 @@ class bioreactor:
     All species except bicarb are considered strong bases / acids (no equilibria)
     """
     net_charge = 0
-    if param.skip_units:
-      molar = 1
-    else: molar = Q(1, 'M').simplified
+    
     for species in self.mole:
       if species in param.positively_charged:
-        net_charge += self.mole[species]/self.working_volume/molar
+        net_charge += self.mole[species]/self.working_volume/self.molar
       if species in param.negatively_charged:
-        net_charge -= self.mole[species]/self.working_volume/molar
+        net_charge -= self.mole[species]/self.working_volume/self.molar
     pH = -math.log10((-net_charge/2+math.sqrt((net_charge/2)**2+\
-      10**-14+10**-6.36*1.0017*self.mole['dCO2']/self.working_volume/molar)))
+      10**-14+10**-6.36*1.0017*self.mole['dCO2']/self.working_volume/self.molar)))
     # print(pH, self.mole['dCO2']/self.working_volume)
     return pH
   

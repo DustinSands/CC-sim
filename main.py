@@ -28,7 +28,7 @@ example_media = {
            # 'LDH':Q(, 'g/L'), 
            # 'lactate':Q(, 'g/L'), 
            'glucose':Q(8.39, 'mM'), 
-           'amino_acids':Q(150, 'mM'),
+           'amino_acids':Q(60, 'mM'),
            'acetic_acid':Q(3.15, 'mM'),
            'butyric_acid':Q(0.76, 'mM'),
            'citric_acid':Q(0.64, 'mM'),
@@ -36,8 +36,17 @@ example_media = {
            'isovaleric_acid':Q(1.53, 'mM'),
            'lactate':Q(4.99, 'mM'),
            'adenine':Q(0.68, 'mM'),
-           'NaCl':Q(40., 'mM'),
-           'KCl':Q(50., 'mM')}
+           'NaCl':Q(60., 'mM'),
+           'KCl':Q(40., 'mM')}
+
+example_concentrated_media = {'NaHCO3':Q(22., 'mM'), 
+                              'dO2':Q(0.21, 'mM'), 
+                              'glucose':Q(40, 'mM'), 
+                              'amino_acids':Q(300, 'mM'),
+                              'lactate':Q(4.99, 'mM'),
+                              'NaCl':Q(60., 'mM'),
+                              'KCl':Q(40., 'mM')
+                              }
 
 """The simulation needs initial starting conditions for actual and cells to pass to 
 modules for the first step."""
@@ -49,8 +58,8 @@ initial_actuation.update({
   'air':Q(0.01, 'L/min').simplified,
   'O2':Q(0, 'L/min').simplified,
   'CO2':Q(0, 'L/min').simplified,
-  'gas_volume':Q(0.01,'L/min').simplified,
-  'liquid_volume':Q(0,'L/min').simplified,
+  'gas_volumetric_rate':Q(0.01,'L/min').simplified,
+  'liquid_volumetric_rate':Q(0,'L/min').simplified,
   })
 
 no_cells = {'mass_transfer':{parameter:Q(0, 'mol/min').simplified for parameter in param.liquid_components},
@@ -83,11 +92,12 @@ def create_config(num_experiments):
                    'initial_volume':initial_volume,
                    'sample_interval':Q(24, 'h'), 
                    'cpp':'glucose', 
-                   'set_point':Q(1.5, 'g/L'), 
+                   'set_point':Q(2.5, 'g/L'), 
                    'initial_time': start_time, 
                    'target_seeding_density':Q(10, 'e5c/ml')}
-  concentrated_media = {component:2*concentration for component, concentration
-                        in example_media.items()}
+  # concentrated_media = {component:2*concentration for component, concentration
+  #                       in example_media.items()}
+  concentrated_media = example_concentrated_media
   secondary_feed_setup = {'feed_mixture':concentrated_media,
                           'initial_volume':initial_volume,
                           'sample_interval':Q(24, 'h'), 
@@ -172,7 +182,7 @@ def run_experiments(config, duration):
       else:
         offline = False
       environment[br] = env_wrappers[br].step(actuation_out[br], cells_output[br])
-      cells_output[br] = cell_wrappers[br].step(environment[br])
+      cells_output[br], cheater_metrics = cell_wrappers[br].step(environment[br])
       # Run simulation for a step
       obs[br] = assay_wrappers[br].step(environment[br], cells_output[br], offline)
       #This will update setpoints for actuation, so actuation doesn't need an 
@@ -184,11 +194,19 @@ def run_experiments(config, duration):
       # cells_output = cell_wrapper[br](environment)
       
       if offline == True or step%online_metric_interval < 1:
-        metrics[br].append(helper_functions.scale_units(control_metrics))
-        metrics[br][-1].update(helper_functions.scale_units(obs[br]))
+        step_metrics = {**control_metrics,
+                        **obs[br],
+                        }
+        metrics[br].append(helper_functions.scale_units(step_metrics))
         #CHEATER METRICS
-        metrics[br][-1].update({'dCO2':environment[br]['dCO2']})
-        metrics[br][-1].update({'amino_acids':environment[br]['amino_acids']})
+        if not param.realistic_mode:
+          cheater_metrics.update({
+                             'amino_acids':environment[br]['amino_acids'],
+                             'dCO2':environment[br]['dCO2'],
+                             'rVCD':cells_output[br]['living_cells']/environment[br]['volume'],
+                             'rglucose':environment[br]['glucose'],
+                             })
+          metrics[br][-1].update(helper_functions.scale_units(cheater_metrics))
       if offline == True:
         # dual_plot('pH', 'pH_PID', metrics[br])
         # dual_plot('dO2', 'aeration_PID', metrics[br])
@@ -217,7 +235,8 @@ def dual_plot( y1_param, y2_param, metrics=None, total_days=14):
     ax1.set_ylabel(y1_param+f' {y1[0].dimensionality}', color = 'red')
   else:
     ax1.set_ylabel(y1_param, color = 'red')
-  ax1.plot(x1, y1, color = 'red')
+  func = helper_functions.get_plotfunc(ax1, y1_param)
+  func(x1, y1, color = 'red')
   ax1.set_xlim([0, total_days])
   if max(y1)/2> min(y1):
     ax1.set_ylim(-max(y1)/100)
@@ -234,7 +253,8 @@ def dual_plot( y1_param, y2_param, metrics=None, total_days=14):
     ax2.set_ylabel(y2_param+f' {y2[0].dimensionality}', color = 'blue')
   else:
     ax2.set_ylabel(y2_param, color = 'blue')
-  ax2.plot(x2, y2, color='blue')
+  func = helper_functions.get_plotfunc(ax2, y2_param)
+  func(x2, y2, color='blue')
   if max(y2)/2>min(y2):
     ax2.set_ylim(-max(y2)/100)
   fig.tight_layout()
@@ -264,18 +284,19 @@ def multireactor_plot(param, metrics = None, total_days = 14):
  
   ax1.set_xlim([0, total_days])
 
+days = 14
 def run_sim():
   config = create_config(1)
-  metrics = run_experiments(config, np.timedelta64(14, 'D'))
+  metrics = run_experiments(config, np.timedelta64(days, 'D'))
   return metrics
   
 if __name__ == '__main__':
   default_metrics = run_sim()
-  dual_plot('viability','VCD' )
-  dual_plot('mOsm', 'cell_diameter')
-  dual_plot('pH', 'pH_PID')
-  dual_plot('dO2', 'aeration_PID')
-  dual_plot('glucose', 'glucose addition rate')
-  dual_plot('mass', 'mOsm feed rate')
-  dual_plot('mOsm', 'mOsm feed rate')
-  dual_plot('dCO2', 'amino_acids')
+  dual_plot('viability','VCD', total_days = days )
+  dual_plot('mOsm', 'cell_diameter', total_days = days)
+  dual_plot('pH', 'pH_PID', total_days = days)
+  dual_plot('dO2', 'aeration_PID', total_days = days)
+  dual_plot('rglucose', 'glucose addition rate', total_days = days)
+  dual_plot('mass', 'mOsm feed rate', total_days = days)
+  dual_plot('dCO2', 'amino_acids', total_days = days)
+  dual_plot('target_diameter', 'growth_inhibition', total_days = days)

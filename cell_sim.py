@@ -44,8 +44,8 @@ global_cell_line_mean_parameters = \
     'delayed_death_transition': np.timedelta64(4, 'h'), 
     'growth_diameter': Q(14, 'um'),
     'production_diameter_increase': Q(5, 'um'),
-    'component_A_sensitivity':Q(1e7, '1/M'),
-    'component_A_tolerance':Q(1e-7, 'M'),
+    'component_A_sensitivity':Q(2e6, '1/M'),
+    'component_A_tolerance':Q(5e-6, 'M'),
     'component_B_sensitivity':Q(4e7, '1/M'),
     'component_B_tolerance':Q(1e-7, 'M'),
     'component_C_sensitivity':Q(0.03, '1/mM'),
@@ -79,8 +79,8 @@ global_cell_line_STD_parameters = \
     'delayed_death_transition': np.timedelta64(60, 'm'),
     'growth_diameter': Q(1, 'um'),
     'production_diameter_increase': Q(2, 'um'),
-    'component_A_sensitivity':Q(5e6, '1/M'),
-    'component_A_tolerance':Q(2e-8, 'M'),
+    'component_A_sensitivity':Q(5e5, '1/M'),
+    'component_A_tolerance':Q(1e-6, 'M'),
     'component_B_sensitivity':Q(5e6, '1/M'),
     'component_B_tolerance':Q(1e-8, 'M'),
     'component_C_sensitivity':Q(0.01, '1/mM'),
@@ -118,7 +118,7 @@ def gen_cell_line():
     param_wrong += cell_param['acidic_variants'] < 0.06
     param_wrong += cell_param['basic_variants'] < 0.04
     param_wrong += cell_param['production_diameter_increase'] < 1
-    param_wrong += cell_param['component_A_sensitivity'] > Q( 5e6, '1/M')
+    param_wrong += cell_param['component_A_sensitivity'] < Q( 5e5, '1/M')
     num += 1
     if param_wrong==0:
       return cell_param
@@ -167,8 +167,6 @@ class cell_wrapper:
     (Although it is unclear to what extent cells do this)
     
     """
-    self.volume += self.growth_per_tick * rate
-
     sensitivity = self.cp['component_A_sensitivity']
     tolerance = self.cp['component_A_tolerance']
 
@@ -176,18 +174,22 @@ class cell_wrapper:
                                                          tolerance-3/sensitivity)))
     osmo_inhibition = 1/(1+math.exp(-1/self.cp['growth_osmo_range']*\
       (env['mOsm']-self.cp['growth_osmo']-3*self.cp['growth_osmo_range'])))
-    total_inhibition = comp_A_inhibition + osmo_inhibition - \
+    self.total_inhibition = comp_A_inhibition + osmo_inhibition - \
       comp_A_inhibition * osmo_inhibition
 
     #Convert some biomass to VCD if target diameter is smaller than current
     #Otherwise, just grow diameter
-    self.target_diameter = self.cp['growth_diameter'] + total_inhibition*self.cp[
+    self.target_diameter = self.cp['growth_diameter'] + self.total_inhibition*self.cp[
       'production_diameter_increase']
     target_volume = math.pi/6*self.target_diameter**3
+    self.volume += self.growth_per_tick * rate
+    
     volume_diff = self.volume - target_volume
+    
     if volume_diff > 0:
       if volume_diff > 2*self.growth_per_tick:
         volume_diff = 2*self.growth_per_tick
+      volume_diff *= 1-self.total_inhibition
       self.volume -= volume_diff
       self.viable_cells *= volume_diff / self.volume + 1
     self.diameter = (6/math.pi*self.volume)**(1/3) 
@@ -252,19 +254,18 @@ class cell_wrapper:
     MT_coeff = math.pi*self.diameter**2*self.p['mass_transfer_rate']
     time_coeff = 1-math.exp(-MT_coeff*param.step_size/self.volume)
     limit_coeff = MT_coeff / time_coeff / metabolism_rate
-  
-    aa_limiting_rate = limit_coeff / (self.p['aa_consumption']) *\
-      (self.molarity['amino_acids']*(1-time_coeff)+env['amino_acids']*time_coeff)
-    O2_limiting_rate = limit_coeff / (self.p['dO2_consumption']*self.volume) *\
-      (self.molarity['dO2']*(1-time_coeff)+env['dO2']*time_coeff)
-    glucose_limiting_rate = limit_coeff / self.p['glucose_consumption'] *\
-      (self.molarity['glucose']*(1-time_coeff)+env['glucose']*time_coeff)
+    
+    aa_limiting_rate = min(limit_coeff / (self.p['aa_consumption']) *\
+      (self.molarity['amino_acids']*(1-time_coeff)+env['amino_acids']*time_coeff), 1)
+    O2_limiting_rate = min(limit_coeff / (self.p['dO2_consumption']*self.volume) *\
+      (self.molarity['dO2']*(1-time_coeff)+env['dO2']*time_coeff), 1)
+    glucose_limiting_rate = min(limit_coeff / self.p['glucose_consumption'] *\
+      (self.molarity['glucose']*(1-time_coeff)+env['glucose']*time_coeff), 1)
 
     # Find smallest rate
     limiting_rate = min(aa_limiting_rate, 
                         O2_limiting_rate, 
-                        glucose_limiting_rate, 
-                        1)
+                        glucose_limiting_rate)
     if limiting_rate < 0:
       limiting_rate = 0 
     mass_transfer = {}
@@ -280,11 +281,11 @@ class cell_wrapper:
         consumption[component] = Q(0, 'mol/s')
       
     consumption['amino_acids'] = \
-      limiting_rate * metabolism_rate * self.p['aa_consumption']
+      (limiting_rate+aa_limiting_rate)/2 * metabolism_rate * self.p['aa_consumption']
     consumption['dO2'] = \
-      limiting_rate * metabolism_rate * self.p['dO2_consumption']*self.volume
+      (limiting_rate+O2_limiting_rate)/2 * metabolism_rate * self.p['dO2_consumption']*self.volume
     consumption['glucose'] = \
-      limiting_rate * metabolism_rate * self.p['glucose_consumption']
+      (limiting_rate+glucose_limiting_rate)/2 * metabolism_rate * self.p['glucose_consumption']
     consumption['dCO2'] = -consumption['dO2'] * self.cp['respiratory_quotient']
       
     
@@ -332,6 +333,7 @@ class cell_wrapper:
     
   def step(self, env):
     cells = {}
+    cheater_metrics = {}
     self.update_in_range(env)
 
     """
@@ -348,7 +350,8 @@ class cell_wrapper:
     cells['total_cells'] = living_cells+self.dead_cells
     cells['diameter'] = self.diameter
     cells['volume'] = self.volume
-    cells['target_diameter'] = self.target_diameter #Cheater metric
+    cheater_metrics['target_diameter'] = self.target_diameter #Cheater metric
+    cheater_metrics['growth_inhibition'] = self.total_inhibition #Cheater metric
     
     """Calculate PQ.  Mostly intended to create deviations in PQ if any of the 
     variables known to affect PQ go out of range for the cell line.  Might be 
@@ -371,7 +374,7 @@ class cell_wrapper:
     cells['mass_transfer']['component_A'] = -self.viable_cells * self.p['component_A_production_rate']
     
     
-    return cells
+    return cells, cheater_metrics
   
 if __name__ == '__main__':
   main.run_sim()

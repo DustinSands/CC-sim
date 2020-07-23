@@ -89,6 +89,7 @@ base_unit_lookup = {
   'air':'m**3/s',
   'CO2':'m**3/s',
   'O2':'m**3/s',
+  'target_diameter':'m',
   }
 
 rescale_unit_lookup = {
@@ -108,7 +109,18 @@ rescale_unit_lookup = {
   'air':'ml/min',
   'CO2':'ml/min',
   'O2':'ml/min',
+  'target_diameter':'um',
   }
+
+def get_plotfunc(ax, param):
+  """Decides whether the appropriate plotting function is a step or line plot.
+  """
+  steps = ['glucose addition aate', ]
+  if param in steps:
+    func = lambda x, y, **kwargs: ax.step(x, y, where='post', **kwargs)
+  else:
+    func = ax.plot
+  return func
 
 def scale_units(assays):
   """Adds units and rescales for human interaction / visualization."""

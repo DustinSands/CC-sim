@@ -47,7 +47,7 @@ class mixture:
       self.replace_source()
     for component, molarity in self.molarity.items():
       output[component] = molarity*liquid_rate
-    output['liquid_volume'] = liquid_rate
+    output['liquid_volumetric_rate'] = liquid_rate
     return output
     
   def replace_source(self):
@@ -203,8 +203,8 @@ class wrapper:
       actuation[item] = Q(0., 'L/min').simplified
     if param.skip_units:
       actuation = {component:0 for component in [*param.liquid_components, 
-                *param.gas_components, 'liquid_volume',
-                'gas_volume', 'RPS', 'heat']}
+                *param.gas_components, 'liquid_volumetric_rate',
+                'gas_volumetric_rate', 'RPS', 'heat']}
     
     
     for item in self.actuation_list:
@@ -215,7 +215,7 @@ class wrapper:
         
     gas_volume = Q(0., 'L/min')
     for component in param.gas_components:
-      actuation['gas_volume'] += actuation[component]
+      actuation['gas_volumetric_rate'] += actuation[component]
     return actuation
     # for component in param.liquid_components:
     #   actuation.update({component:    })
