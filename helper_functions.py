@@ -115,7 +115,8 @@ rescale_unit_lookup = {
 def get_plotfunc(ax, param):
   """Decides whether the appropriate plotting function is a step or line plot.
   """
-  steps = ['glucose addition aate', ]
+  steps = ['glucose addition rate', 'glucose feed rate', 'mOsm feed rate', 
+           'mOsm addition rate']
   if param in steps:
     func = lambda x, y, **kwargs: ax.step(x, y, where='post', **kwargs)
   else:
