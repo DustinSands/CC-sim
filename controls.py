@@ -135,8 +135,8 @@ class basic_fed_batch_feed(feed_strategy):
     self.last_concentration = obs[self.cpp]
     self.ignore_first = 1
 
-    return {f'{self.cpp} Feed Rate':self.actuation[0].set_point,
-            f'{self.cpp} Addition Rate':self.addition_rate,}
+    return {f'{self.cpp} feed rate':self.actuation[0].set_point,
+            f'{self.cpp} addition rate':self.addition_rate,}
 
 class dynamic_perfusion_feed(feed_strategy):
   """Perfusion reactor.  Adds a constant amount of nutrient in order to maintain
