@@ -4,7 +4,7 @@ Created on Wed Jul 15 18:44:54 2020
 
 @author: Racehorse
 """
-import random, pdb
+import random, pdb, time
 
 from quantities import Quantity as Q
 import quantities as q
@@ -111,6 +111,71 @@ rescale_unit_lookup = {
   'O2':'ml/min',
   'target_diameter':'um',
   }
+
+timer = {}
+
+class time_tracker():
+  """Tracks total time spent between start and stop.  
+  """
+  def __init__(self):
+    self.on = False
+    self.total = 0
+    if False:
+      self.start = self.debug_start
+      self.stop = self.debug_stop
+  
+  def start(self):
+    self.start_time = time.perf_counter()
+  
+  def stop(self):
+    self.stop_time = time.perf_counter()
+    elapsed = self.stop_time - self.start_time
+    self.total += elapsed
+    
+  def debug_start(self):
+    assert self.on ==False
+    self.on = True
+    self.start_time = time.perf_counter()
+  
+  def debug_stop(self):
+    assert self.on == True
+    self.on = False
+    self.stop_time = time.perf_counter()
+    elapsed = self.stop_time - self.start_time
+    self.total += elapsed
+    
+  def print(self):
+    print(f'{self.name} total elapsed:{self.total} s')
+  
+  def reset(self):
+    self.on = False
+    self.total = 0
+    
+def reset_times():
+  for name in timer_list:
+    timer[name].reset()
+
+def print_times():
+  """Helper function to print how long the agent has spent doing various tasks.
+  Resets all timers at end. """
+  percent = {}
+  for name in timer_list:
+    percent[name] = round(timer[name].total / timer['total'].total *100,1)
+  print(f'Total time:{timer["total"].total}')
+  print(f'Env:{percent["env"]}%')
+  print(f'Cells:{percent["cells"]}%')
+  print(f'Control, Actuation:{percent["con"]}%')
+  print(f'Assays:{percent["assays"]}%')
+  # print(f'Replay time:{percent["replay"]}%')
+  # print(f'-Recall Time:{percent["recall"]}%')
+  # print(f'-Prep Time:{percent["prep"]}%')
+  # print(f'--Making arrays Time:{percent["prep_1"]}%')
+  # print(f'--Q Value Time:{percent["prep_2"]}%')
+  # print(f'--Modifying targets Time Time:{percent["prep_3"]}%')
+  # print(f'-Train Time:{percent["train"]}%')
+  # print(f'Plot time:{percent["plot"]}%')
+  for name in timer_list:
+    timer[name].reset()
 
 def get_plotfunc(ax, param):
   """Decides whether the appropriate plotting function is a step or line plot.
