@@ -166,14 +166,6 @@ def print_times():
   print(f'Cells:{percent["cells"]}%')
   print(f'Control, Actuation:{percent["con"]}%')
   print(f'Assays:{percent["assays"]}%')
-  # print(f'Replay time:{percent["replay"]}%')
-  # print(f'-Recall Time:{percent["recall"]}%')
-  # print(f'-Prep Time:{percent["prep"]}%')
-  # print(f'--Making arrays Time:{percent["prep_1"]}%')
-  # print(f'--Q Value Time:{percent["prep_2"]}%')
-  # print(f'--Modifying targets Time Time:{percent["prep_3"]}%')
-  # print(f'-Train Time:{percent["train"]}%')
-  # print(f'Plot time:{percent["plot"]}%')
   for name in timer_list:
     timer[name].reset()
 

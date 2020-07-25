@@ -48,6 +48,11 @@ example_concentrated_media = {'NaHCO3':Q(22., 'mM'),
                               'KCl':Q(40., 'mM')
                               }
 
+helper_functions.timer_list = ['total', 'env','cells', 'con', 'assays']
+
+for name in helper_functions.timer_list:
+  helper_functions.timer[name] = helper_functions.time_tracker()
+
 """The simulation needs initial starting conditions for actual and cells to pass to 
 modules for the first step."""
 
@@ -165,7 +170,7 @@ def run_experiments(config, duration):
       control_metrics = control_wrappers[br].step(obs[br], False)
       actuation_out[br] = actuation_wrappers[br].step()
     
-  
+  helper_functions.timer['total'].start()
   for step in range(int(round(total_steps))):
     for br in range(len(env_wrappers)):
       # print(f'step {step}!')
@@ -181,14 +186,25 @@ def run_experiments(config, duration):
             random.gauss(0,0.05*steps_per_day))
       else:
         offline = False
+      helper_functions.timer['env'].start()
       environment[br] = env_wrappers[br].step(actuation_out[br], cells_output[br])
+      helper_functions.timer['env'].stop()
+      
+      helper_functions.timer['cells'].start()
       cells_output[br], cheater_metrics = cell_wrappers[br].step(environment[br])
+      helper_functions.timer['cells'].stop()
+      
       # Run simulation for a step
+      helper_functions.timer['assays'].start()
       obs[br] = assay_wrappers[br].step(environment[br], cells_output[br], offline)
+      helper_functions.timer['assays'].stop()
       #This will update setpoints for actuation, so actuation doesn't need an 
       #input.
+      
+      helper_functions.timer['con'].start()
       control_metrics = control_wrappers[br].step(obs[br], offline)
       actuation_out[br] = actuation_wrappers[br].step()
+      helper_functions.timer['con'].stop()
       # Environment will increment timestep
       
       # cells_output = cell_wrapper[br](environment)
@@ -212,7 +228,7 @@ def run_experiments(config, duration):
         # dual_plot('dO2', 'aeration_PID', metrics[br])
         pass
 
-  
+  helper_functions.timer['total'].stop()
   return metrics
        
         
@@ -292,6 +308,7 @@ def run_sim():
   
 if __name__ == '__main__':
   default_metrics = run_sim()
+  helper_functions.print_times()
   dual_plot('viability','VCD', total_days = days )
   dual_plot('mOsm', 'cell_diameter', total_days = days)
   dual_plot('pH', 'pH_PID', total_days = days)
