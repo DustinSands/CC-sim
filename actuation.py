@@ -192,20 +192,21 @@ class wrapper:
   def step(self):
 
     # actuation = self.initial_actuation.copy()
-    actuation =  {}
-    actuation['liquid_volume']=Q(0., 'L/min').simplified
-    actuation['gas_volume']=Q(0., 'L/min').simplified
-    actuation['RPS'] = Q(0., '1/s').simplified
-    actuation['heat'] = Q(0., 'W').simplified
-    for item in param.liquid_components:
-      actuation[item]=Q(0., 'mol/min').simplified
-    for item in param.gas_components:
-      actuation[item] = Q(0., 'L/min').simplified
+    
     if param.skip_units:
       actuation = {component:0 for component in [*param.liquid_components, 
                 *param.gas_components, 'liquid_volumetric_rate',
                 'gas_volumetric_rate', 'RPS', 'heat']}
-    
+    else:
+      actuation =  {}
+      actuation['liquid_volumetric_rate']=Q(0., 'L/min').simplified
+      actuation['gas_volumetric_rate']=Q(0., 'L/min').simplified
+      actuation['RPS'] = Q(0., '1/s').simplified
+      actuation['heat'] = Q(0., 'W').simplified
+      for item in param.liquid_components:
+        actuation[item]=Q(0., 'mol/min').simplified
+      for item in param.gas_components:
+        actuation[item] = Q(0., 'L/min').simplified
     
     for item in self.actuation_list:
       components_added = item.step()

@@ -21,14 +21,14 @@ import param
 import actuation, assays, cell_sim, controls, bioreactor, helper_functions
 
 example_media = {
-            'NaHCO3':Q(22., 'mM'), 
+            'NaHCO3':Q(20, 'mM'), 
             'dO2':Q(0.21, 'mM'), 
            # 'H2CO3':Q(, 'g/L'), 
            # 'iron':Q(, 'g/L'), 
            # 'LDH':Q(, 'g/L'), 
            # 'lactate':Q(, 'g/L'), 
            'glucose':Q(8.39, 'mM'), 
-           'amino_acids':Q(60, 'mM'),
+           'amino_acids':Q(160, 'mM'),
            'acetic_acid':Q(3.15, 'mM'),
            'butyric_acid':Q(0.76, 'mM'),
            'citric_acid':Q(0.64, 'mM'),
@@ -44,8 +44,8 @@ example_concentrated_media = {'NaHCO3':Q(22., 'mM'),
                               'glucose':Q(40, 'mM'), 
                               'amino_acids':Q(300, 'mM'),
                               'lactate':Q(4.99, 'mM'),
-                              'NaCl':Q(60., 'mM'),
-                              'KCl':Q(40., 'mM')
+                              'NaCl':Q(80., 'mM'),
+                              'KCl':Q(60., 'mM')
                               }
 
 """The simulation needs initial starting conditions for actual and cells to pass to 
@@ -77,7 +77,7 @@ if param.skip_units:
 
 def create_config(num_experiments):
   start_time = np.datetime64('2020-01-01')
-  initial_volume = Q(0.5, 'L')
+  initial_volume = Q(0.05, 'L')
   seed_density = Q(1, 'e6c/ml')
   starting_cells = (initial_volume*seed_density).simplified
   random.seed(0)
@@ -102,7 +102,7 @@ def create_config(num_experiments):
                           'initial_volume':initial_volume,
                           'sample_interval':Q(24, 'h'), 
                           'cpp':'mOsm', 
-                          'set_point':Q(300, 'mM'), 
+                          'set_point':Q(330, 'mM'), 
                           'initial_time': start_time, 
                           'target_seeding_density':Q(10, 'e5c/ml')}
   aeration_setup = {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
@@ -205,6 +205,7 @@ def run_experiments(config, duration):
                              'dCO2':environment[br]['dCO2'],
                              'rVCD':cells_output[br]['living_cells']/environment[br]['volume'],
                              'rglucose':environment[br]['glucose'],
+                             'compA':environment[br]['component_A'],
                              })
           metrics[br][-1].update(helper_functions.scale_units(cheater_metrics))
       if offline == True:
@@ -299,4 +300,4 @@ if __name__ == '__main__':
   dual_plot('rglucose', 'glucose addition rate', total_days = days)
   dual_plot('mass', 'mOsm feed rate', total_days = days)
   dual_plot('dCO2', 'amino_acids', total_days = days)
-  dual_plot('target_diameter', 'growth_inhibition', total_days = days)
+  dual_plot('compA', 'growth_inhibition', total_days = days)

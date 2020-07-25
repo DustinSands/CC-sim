@@ -144,12 +144,12 @@ instrumentation={
   }
 
 cells = {
-  'component_A_production_rate':Q(2e-16, 'mol/ce/day'),
+  'component_A_production_rate':Q(4e-16, 'mol/ce/day'),
   'extinction_coeff': 200.,
-  'mass_transfer_rate': Q(1.8e-5, 'm/s'), # "kLa" of 12/min for cells
+  # 'mass_transfer_rate': Q(1.8e-5, 'm/s'), # "kLa" of 12/min for cells
   'dO2_consumption':Q(0.050,'M/min'),  # 5 g/min/L
-  'glucose_consumption':Q(1.6667e-13,'mol/hour'),
-  'aa_consumption':Q(2.e-12,'mol/day'), # 150 g/day/L
+  'glucose_consumption':Q(1.6667e-13,'mol/hour/ce'),
+  'aa_consumption':Q(2.e-12,'mol/day/ce'), # 150 g/day/L
   'aa_limiting_concentration':Q(0.5, 'mM'),
   'O2_limiting_concentration':Q(0.001, 'mM'),
   'glucose_limiting_concentration':Q(0.1, 'mM'),
@@ -176,9 +176,9 @@ actuation = {
 """CO2 kLa is actually 0.95 of O2 kLa.  However, there occurs significant 
 depletation / saturation of CO2 in gaseous phase that causes C* to change.  
 Temporary fix is dividing kLa by 10."""
-kla_ratio = {
+kLa_ratio = {
   'dO2':1,
-  'dCO2':0.95/40,
+  'dCO2':0.95/15,
   'dCO':1.03,
   }
 
