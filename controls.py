@@ -31,12 +31,17 @@ class feed_strategy:
   Future work: should be generalized to anything that updates offline
   """
   def __init__(self, initial_volume, sample_interval, cpp, 
-               set_point, initial_time, target_seeding_density):
+               set_point, initial_time, target_seeding_density,
+               max_added = None):
     self.initial_volume = initial_volume.simplified
     self.seeding_density = target_seeding_density.simplified
     self.sp = set_point.simplified
     self.interval = sample_interval.simplified
     self.addition_rate = 0*self.sp.units*Q(1,'m**3/s')
+    self.total_added = Q(0, 'm**3')
+    self.max_added = max_added
+    # if self.max_added != None:
+    #   self.max_added = max_added.simplified
     
     
     if param.skip_units:
@@ -45,6 +50,8 @@ class feed_strategy:
       self.sp = float(self.sp)
       self.interval = float(self.interval)
       self.addition_rate = float(self.addition_rate)
+      # self.max_added = float(max_added)
+      self.total_added = float(self.total_added)
 
     
     self.seed_time = initial_time
@@ -66,6 +73,39 @@ class feed_strategy:
       metric = self.update_control(obs)
     return metric
   
+  
+class constant_feed(feed_strategy):
+  def __init__(self, feed_rate, name, start_day = 0,
+               feed_mixture = None, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.name = name
+    self.start_day = start_day
+    if feed_mixture == None:
+      feed_mixture = {'glucose':Q(500, 'g/L').simplified}
+    else:
+      feed_mixture = feed_mixture.copy()
+      for key in feed_mixture:
+        feed_mixture[key] = feed_mixture[key].simplified
+    self.actuation = [actuation.peristaltic(feed_mixture)]
+    self.feed_rate = feed_rate.simplified
+    
+    if param.skip_units: 
+      helper_functions.remove_units(feed_mixture)
+      self.feed_rate = float(self.feed_rate)
+    self.feed_mixture = feed_mixture
+    self.feed_mixture['mOsm'] = self.actuation[0].source.calc_osmo()    
+    if param.skip_units:
+      
+      for component in self.feed_mixture:
+        self.feed_mixture[component] = float(self.feed_mixture[component])
+      
+  def update_control(self, obs):
+    if (obs['time']-self.seed_time)/np.timedelta64(1, 'D')>self.start_day:
+      self.actuation[0].set_point = self.feed_rate 
+
+    return {f'{self.name}':self.actuation[0].set_point}
+  
+
 class basic_fed_batch_feed(feed_strategy):
   """Fed-batch reactor.  Adds a constant amount of specified feed in order to 
   adjust cpp to setpoint at next sample interval.
@@ -92,7 +132,8 @@ class basic_fed_batch_feed(feed_strategy):
       feed_mixture = feed_mixture.copy()
       for key in feed_mixture:
         feed_mixture[key] = feed_mixture[key].simplified
-    self.actuation = [actuation.peristaltic(feed_mixture)]
+    self.actuation = [actuation.peristaltic(feed_mixture, 
+                                            max_added = self.max_added)]
     
     if param.skip_units: 
       helper_functions.remove_units(feed_mixture)
@@ -106,10 +147,14 @@ class basic_fed_batch_feed(feed_strategy):
     
   def update_control(self, obs):
     volume = obs['mass']/self.expected_density
+    
+    time_since_last_obs = (obs['time']-self.last_time)/np.timedelta64(1, 's')
+    
+    self.total_added = self.actuation[0].set_point * time_since_last_obs
+    
     if self.ignore_first:
       if not self.cpp in obs:
         raise ValueError('CPP not included in assays!')
-      time_since_last_obs = (obs['time']-self.last_time)/np.timedelta64(1, 's')
       if not param.skip_units:
         time_since_last_obs *= Q(1, 's')
       average_VCD = (obs['VCD']+self.last_VCD)/2
@@ -232,7 +277,7 @@ class pH:
                min_CO2 = Q(0, 'L/min'), 
                max_CO2 = Q(0.1, 'L/min'),):
     """max_air and max_O2 should be in volumetric flow rates."""
-    self.PID = PID(-3, -Q(5, '1/min'), -Q(2, 'min'), 
+    self.PID = PID(-3/5, -Q(5, '1/min')/20, -Q(2, 'min')/10, 
                    max_pH, 5)
     self.actuation = [actuation.MFC('CO2')]
     self.max_CO2 = max_CO2.simplified

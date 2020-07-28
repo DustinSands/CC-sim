@@ -151,6 +151,9 @@ class bioreactor:
       self.update_shear(actuation['RPS'])
       
   def calc_gas_percentages(self,actuation):
+    """Takes all of the gas flowrates being input and calculates the 
+    percentages of each component in it.  Must also convert air to O2 and CO2.
+    """
     if param.skip_units: total = 0
     else: total = Q(0., 'L/min').simplified
     percent = {}
@@ -164,6 +167,8 @@ class bioreactor:
     return percent
   
   def calc_max_consumption(self, actuation):
+    """Calculates the maximum average consumption that can be used by cells 
+    before the concentration will reach negative values next step."""
     max_consumption = {}
     for component in param.liquid_components:
       if component[1:] in param.gas_components:
@@ -207,12 +212,11 @@ class bioreactor:
     self.working_volume += actuation['liquid_volumetric_rate']*param.step_size
     # print(cells['mass_transfer']['dO2'], cells['mass_transfer']['dCO2'])
     #Temperature
-    self.temperature = 
-    heat_transfer = actuation['heat'] + \
-      (param.environment_temperature-self.temperature)*\
-        self.overall_heat_transfer_coeff
-    self.temperature += heat_transfer*param.step_size /\
-      (self.working_volume*self.volumetric_heat_capacity)
+    k_t = math.exp(-self.overall_heat_transfer_coeff*param.step_size/\
+                   self.working_volume/self.volumetric_heat_capacity)
+    self.temperature = (1-k_t)*(param.environment_temperature+\
+                        actuation['heat']/self.overall_heat_transfer_coeff)+\
+      self.temperature*k_t
 
     cell_fraction = cells['total_cells']*cells['volume']/self.one_cell/self.working_volume
     if cell_fraction > 1:
@@ -256,7 +260,6 @@ class bioreactor:
         net_charge -= self.mole[species]/self.working_volume/self.molar
     pH = -math.log10((-net_charge/2+math.sqrt((net_charge/2)**2+\
       10**-14+10**-6.36*1.0017*self.mole['dCO2']/self.working_volume/self.molar)))
-    # print(pH, self.mole['dCO2']/self.working_volume)
     return pH
   
   def create_kla_function(self):

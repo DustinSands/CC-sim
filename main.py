@@ -21,14 +21,14 @@ import param
 import actuation, assays, cell_sim, controls, bioreactor, helper_functions
 
 example_media = {
-            'NaHCO3':Q(20, 'mM'), 
+            'NaHCO3':Q(22, 'mM'), 
             'dO2':Q(0.21, 'mM'), 
            # 'H2CO3':Q(, 'g/L'), 
            # 'iron':Q(, 'g/L'), 
            # 'LDH':Q(, 'g/L'), 
            # 'lactate':Q(, 'g/L'), 
            'glucose':Q(8.39, 'mM'), 
-           'amino_acids':Q(160, 'mM'),
+           'amino_acids':Q(70, 'mM'),
            'acetic_acid':Q(3.15, 'mM'),
            'butyric_acid':Q(0.76, 'mM'),
            'citric_acid':Q(0.64, 'mM'),
@@ -36,16 +36,16 @@ example_media = {
            'isovaleric_acid':Q(1.53, 'mM'),
            'lactate':Q(4.99, 'mM'),
            'adenine':Q(0.68, 'mM'),
-           'NaCl':Q(60., 'mM'),
+           'NaCl':Q(70., 'mM'),
            'KCl':Q(40., 'mM')}
 
-example_concentrated_media = {'NaHCO3':Q(22., 'mM'), 
+example_concentrated_media = {'NaHCO3':Q(22, 'mM'), 
                               'dO2':Q(0.21, 'mM'), 
-                              'glucose':Q(40, 'mM'), 
-                              'amino_acids':Q(300, 'mM'),
+                              # 'glucose':Q(100, 'mM'), 
+                              'amino_acids':Q(700, 'mM'),
                               'lactate':Q(4.99, 'mM'),
-                              'NaCl':Q(80., 'mM'),
-                              'KCl':Q(60., 'mM')
+                              'NaCl':Q(100., 'mM'),
+                              'KCl':Q(80., 'mM')
                               }
 
 """The simulation needs initial starting conditions for actual and cells to pass to 
@@ -54,12 +54,12 @@ modules for the first step."""
 initial_actuation = {parameter:Q(0, 'mol/min') for parameter in param.liquid_components}
 initial_actuation.update({
   'heat':Q(50, 'W').simplified,
-  'RPS':Q(5, '1/s').simplified,
+  'RPS':Q(5, '1/s'),
   'air':Q(0.01, 'L/min').simplified,
-  'O2':Q(0, 'L/min').simplified,
-  'CO2':Q(0, 'L/min').simplified,
+  'O2':Q(0, 'm**3/s'),
+  'CO2':Q(0, 'm**3/s'),
   'gas_volumetric_rate':Q(0.01,'L/min').simplified,
-  'liquid_volumetric_rate':Q(0,'L/min').simplified,
+  'liquid_volumetric_rate':Q(0,'m**3/s'),
   })
 
 no_cells = {'mass_transfer':{parameter:Q(0, 'mol/min').simplified for parameter in param.liquid_components},
@@ -75,13 +75,16 @@ if param.skip_units:
 
         
 
-def create_config(num_experiments):
+def create_config(num_experiments, 
+                  cell_line = None,
+                  glucose_sp = 1.5,
+                  ):
   start_time = np.datetime64('2020-01-01')
-  initial_volume = Q(0.05, 'L')
+  initial_volume = Q(0.5, 'L')
   seed_density = Q(1, 'e6c/ml')
   starting_cells = (initial_volume*seed_density).simplified
-  random.seed(0)
-  cell_line = cell_sim.gen_cell_line()
+  if cell_line == None:
+    cell_line = cell_sim.gen_cell_line()
   assay_setup = [assays.osmo(),
                  assays.BGA(), 
                  assays.cell_counter(),
@@ -92,11 +95,9 @@ def create_config(num_experiments):
                    'initial_volume':initial_volume,
                    'sample_interval':Q(24, 'h'), 
                    'cpp':'glucose', 
-                   'set_point':Q(2.5, 'g/L'), 
+                   'set_point':Q(glucose_sp, 'g/L'), 
                    'initial_time': start_time, 
                    'target_seeding_density':Q(10, 'e5c/ml')}
-  # concentrated_media = {component:2*concentration for component, concentration
-  #                       in example_media.items()}
   concentrated_media = example_concentrated_media
   secondary_feed_setup = {'feed_mixture':concentrated_media,
                           'initial_volume':initial_volume,
@@ -104,7 +105,8 @@ def create_config(num_experiments):
                           'cpp':'mOsm', 
                           'set_point':Q(330, 'mM'), 
                           'initial_time': start_time, 
-                          'target_seeding_density':Q(10, 'e5c/ml')}
+                          'target_seeding_density':Q(10, 'e5c/ml'),
+                          'max_added':Q(1., 'L'),}
   aeration_setup = {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
                'max_O2':Q(0.1, 'L/min')}
   control_setup = [(controls.basic_fed_batch_feed,[],fed_batch_setup),
@@ -136,7 +138,7 @@ def run_experiments(config, duration):
     cell_wrappers.append(cell_sim.cell_wrapper(*cell_setup))
   
   steps_per_day = np.timedelta64(1, 'D') / param.resolution
-  total_steps = round(duration/param.resolution+random.gauss(0, steps_per_day*0.05))
+  total_steps = round(duration/param.resolution+helper_functions.gauss(0, steps_per_day*0.05))
   
   
   #Define initial values to pass
@@ -178,7 +180,7 @@ def run_experiments(config, duration):
           next_offline_step[br] = total_steps - 1
         else:
           next_offline_step[br] = round(steps_per_day*(day[br]+1) +\
-            random.gauss(0,0.05*steps_per_day))
+            helper_functions.gauss(0,0.05*steps_per_day))
       else:
         offline = False
       environment[br] = env_wrappers[br].step(actuation_out[br], cells_output[br])
@@ -206,6 +208,8 @@ def run_experiments(config, duration):
                              'rVCD':cells_output[br]['living_cells']/environment[br]['volume'],
                              'rglucose':environment[br]['glucose'],
                              'compA':environment[br]['component_A'],
+                             'total_cell_volume':cells_output[br]['living_cells']*cells_output[br]['volume'],
+                             'total_living_cells':cells_output[br]['living_cells'],
                              })
           metrics[br][-1].update(helper_functions.scale_units(cheater_metrics))
       if offline == True:
@@ -217,51 +221,75 @@ def run_experiments(config, duration):
   return metrics
        
         
-      
-
-def dual_plot( y1_param, y2_param, metrics=None, total_days=14):
-  """Plot two different metrics on one graph."""
-  if metrics == None:
-    metrics = default_metrics[0]
-  fig, ax1 = plt.subplots()
-  tuples = [((metrics[point]['time']-metrics[0]['time'])/np.timedelta64(1,'D'),
-         metrics[point][y1_param])
-        for point in range(len(metrics)) if y1_param in metrics[point]]
-  if len(tuples) > 0:
-    x1, y1 = list(zip(*tuples))
-  else:
-    x1, y1 = [], []
-  ax1.set_xlabel('Day')
-  if len(y1)>0 and type(y1[0]) == Q:
-    ax1.set_ylabel(y1_param+f' {y1[0].dimensionality}', color = 'red')
-  else:
-    ax1.set_ylabel(y1_param, color = 'red')
-  func = helper_functions.get_plotfunc(ax1, y1_param)
-  func(x1, y1, color = 'red')
-  ax1.set_xlim([0, total_days])
-  if max(y1)/2> min(y1):
-    ax1.set_ylim(-max(y1)/100)
-
-  tuples = [((metrics[point]['time']-metrics[0]['time'])/np.timedelta64(1,'D'),
-          metrics[point][y2_param])
-        for point in range(len(metrics)) if y2_param in metrics[point]]
-  if len(tuples) > 0:
-    x2, y2 = list(zip(*tuples))
-  else:
-    x2, y2 = [], []
+def dual_subplot(y11_param, y12_param, y21_param, y22_param, metrics = None,
+                 big_title = None, left_title = None, right_title = None):
+  
+  fig = plt.figure(figsize = (10, 4))
+  # spec = fig.add_gridspec(2, 1)
+  ax1 = fig.add_subplot(121)
+  plot_var(ax1, y11_param, metrics, color = 'red')
+  
   ax2 = ax1.twinx()
-  if len(y2)>0 and type(y2[0]) ==Q:
-    ax2.set_ylabel(y2_param+f' {y2[0].dimensionality}', color = 'blue')
-  else:
-    ax2.set_ylabel(y2_param, color = 'blue')
-  func = helper_functions.get_plotfunc(ax2, y2_param)
-  func(x2, y2, color='blue')
-  if max(y2)/2>min(y2):
-    ax2.set_ylim(-max(y2)/100)
+  plot_var(ax2, y12_param, metrics, color = 'blue')
+  
+  if left_title != None:
+    ax1.set_title(left_title)
+  
+  ax3 = fig.add_subplot(122)
+  plot_var(ax3, y21_param, metrics, color = 'red')
+  
+  ax4 = ax3.twinx()
+  plot_var(ax4, y22_param, metrics, color = 'blue')
+  
+  if right_title != None:
+    ax3.set_title(right_title)
+  
+  if big_title != None:
+    fig.suptitle(big_title, y = 1.04)
   fig.tight_layout()
   fig.dpi = 200
   plt.show()
   plt.close()
+
+def dual_plot( y1_param, y2_param, metrics=None):
+  """Plot two different metrics on one graph."""
+  fig, ax1 = plt.subplots()
+  plot_var(ax1, y1_param, metrics = metrics, color = 'red')
+  
+  ax2 = ax1.twinx()
+  plot_var(ax2, y2_param, metrics = metrics, color = 'blue')
+  
+  fig.tight_layout()
+  fig.dpi = 200
+  plt.show()
+  plt.close()
+  
+def plot_var(axis, variable, metrics, color = 'black'):
+  if metrics == None:
+    metrics = default_metrics
+  plot_func = helper_functions.get_plotfunc(axis, variable)
+  for metric in metrics:
+    tuples = [((metric[point]['time']-metric[0]['time'])/np.timedelta64(1,'D'),
+           metric[point][variable])
+          for point in range(len(metric)) if variable in metric[point]]
+    if len(tuples) > 0:
+      x, y = list(zip(*tuples))
+      plot_func(x, y, color = color)
+
+
+  if len(tuples) > 0:
+    if max(y)/3> min(y):
+      axis.set_ylim(bottom = -max(y)/100, top = None)
+
+  axis.set_xlabel('Day')
+  if len(y)>0 and type(y[0]) == Q:
+    axis.set_ylabel(variable+f' {y[0].dimensionality}', color = color)
+  else:
+    axis.set_ylabel(variable, color = color)
+  
+  axis.set_xlim(0, (metric[-1]['time']-metric[0]['time'])/np.timedelta64(1,'D'))
+  
+    
   
 def multireactor_plot(param, metrics = None, total_days = 14):
   """Plots all experiments on the same plot for a single parameter"""
@@ -286,18 +314,32 @@ def multireactor_plot(param, metrics = None, total_days = 14):
   ax1.set_xlim([0, total_days])
 
 days = 14
+
+
+
 def run_sim():
   config = create_config(1)
   metrics = run_experiments(config, np.timedelta64(days, 'D'))
   return metrics
   
 if __name__ == '__main__':
-  default_metrics = run_sim()
-  dual_plot('viability','VCD', total_days = days )
-  dual_plot('mOsm', 'cell_diameter', total_days = days)
-  dual_plot('pH', 'pH_PID', total_days = days)
-  dual_plot('dO2', 'aeration_PID', total_days = days)
-  dual_plot('rglucose', 'glucose addition rate', total_days = days)
-  dual_plot('mass', 'mOsm feed rate', total_days = days)
-  dual_plot('dCO2', 'amino_acids', total_days = days)
-  dual_plot('compA', 'growth_inhibition', total_days = days)
+  cell_line = cell_sim.gen_cell_line()
+  config = create_config(3, glucose_sp = 0.5, cell_line = cell_line)
+  low_glucose = run_experiments(config, np.timedelta64(days, 'D'))
+  
+  dual_subplot('VCD', 'glucose', 'viability', 'IGG', metrics = low_glucose,
+               big_title = r'Glucose Setpoint = 0.5 g/L', left_title = 'VCD vs Glucose',
+               right_title = 'Viability vs IGG')
+  dual_plot('mOsm', 'mOsm feed rate', metrics = low_glucose)
+  dual_plot('mOsm', 'mass', metrics = low_glucose)
+  dual_plot('rglucose', 'amino_acids', metrics = low_glucose)
+  
+  config = create_config(3, glucose_sp = 1.5, cell_line = cell_line)
+  normal_glucose = run_experiments(config, np.timedelta64(days, 'D'))
+
+  dual_subplot('VCD', 'glucose', 'viability', 'IGG', metrics = normal_glucose,
+               big_title = r'Glucose Setpoint = 1.5 g/L', left_title = 'VCD vs Glucose',
+               right_title = 'Viability vs IGG')
+  dual_plot('mOsm', 'mass', metrics = normal_glucose)
+  dual_plot('rglucose', 'amino_acids', metrics = normal_glucose)
+  

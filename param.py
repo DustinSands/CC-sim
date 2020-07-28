@@ -7,6 +7,7 @@ import pdb
 import numpy as np
 import quantities as q
 from quantities import Quantity as Q
+import matplotlib
 
 
 
@@ -20,10 +21,11 @@ realistic_mode = 0
 # on is much faster, but should not be used when implementing new features
 skip_units = 1
 
-
 # Allows things like peristaltic pumps to break (generally 1 / yr)
 allow_breaking = 0
 
+#Consistent results; debug mode
+debug = 0
 
 # Same as simulation resolution, but in quantities package
 q_intermediate = resolution / np.timedelta64(1, 'm')
@@ -32,6 +34,7 @@ if skip_units:
   step_size = float(q_res)
 else: step_size = q_res
 
+#quantities
 cells = q.unitquantity.IrreducibleUnit('cells', symbol = 'ce')
 pg = q.UnitQuantity('pg', 1e-15*q.kg, 'picogram')
 ce = q.UnitQuantity('ce', cells, 'ce')
@@ -40,6 +43,9 @@ hcm = q.UnitQuantity('e6c', 1e6*cells, 'e6c')
 q.CD = q.CompoundUnit('e5c/ml')
 q.HCD = q.CompoundUnit('e6c/ml')
 
+#matplotlib
+matplotlib.rcParams['axes.formatter.useoffset'] = False
+
 #Constants
 gravity = Q(9.81, 'm/s**2').simplified
 actual_cc_density = Q(980, 'g/L').simplified #Assumed constant.  Can be deleted when calculated density encoded
@@ -47,22 +53,14 @@ expected_cc_density = Q(1000, 'g/L').simplified
 viscosity = Q(0.001, 'Pa*s').simplified
 environment_temperature = 26
 volumetric_heat_capacity = Q(4180, 'J/L').simplified # per K 
-# if skip_units:
-#   gravity = float(gravity)
-#   actual_cc_density =float(actual_cc_density)
-#   expected_cc_density = float(expected_cc_density)
-#   viscosity = float(viscosity) 
-#   environment_temperature = float(environment_temperature)
-#   volumetric_heat_capacity = float(volumetric_heat_capacity)
 
-
-
-cell_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'dCO2', 'IGG_a',
-                      'IGG_b', 'IGG_n', 'component_A', 'Na', 'K']
-liquid_components = [*cell_components, 'LDH', 'lactate', 
+liquid_components = ['dO2', 'glucose', 'iron', 'amino_acids', 'dCO2', 'IGG_a',
+                      'IGG_b', 'IGG_n', 'component_A', 'Na', 'K', 'LDH', 'lactate', 
                       'component_B', 'component_C', 'component_D', 'Cl',
                       ]
 gas_components = ['CO2', 'O2', 'air']
+
+#All acids / bases are treated as strong except for bicarb
 positively_charged = ['Na', 'K']
 negatively_charged = ['Cl', 'lactate']
 
@@ -113,7 +111,8 @@ instrumentation={
       },
     'pH':{
       'drift_sigma' : 1.73, #s
-      't98' : np.timedelta64(30, 's'), #s
+      # 't98' : np.timedelta64(30, 's'), #s
+      't98' : np.timedelta64(5, 'm'), #s
       'random_sigma' : 0.001,     # 'net'
       },
     'temperature':{  
@@ -123,8 +122,8 @@ instrumentation={
       },
     },
   'bioHT':{
-    'random_error_CV':0.04,     #LC
-    'systematic_error_CV':0.03, #LC
+    'random_error_CV':0.05,     #LC
+    'systematic_error_CV':0.08, #LC
     },
   'Cell_Counter':{
     'density_random_error_CV':0.05,      # s
@@ -144,8 +143,7 @@ instrumentation={
   }
 
 cells = {
-  'component_A_production_rate':Q(4e-16, 'mol/ce/day'),
-  'extinction_coeff': 200.,
+  'component_A_production_rate':Q(1e-16, 'mol/ce/day'),
   # 'mass_transfer_rate': Q(1.8e-5, 'm/s'), # "kLa" of 12/min for cells
   'dO2_consumption':Q(0.050,'M/min'),  # 5 g/min/L
   'glucose_consumption':Q(1.6667e-13,'mol/hour/ce'),
@@ -153,6 +151,7 @@ cells = {
   'aa_limiting_concentration':Q(0.5, 'mM'),
   'O2_limiting_concentration':Q(0.001, 'mM'),
   'glucose_limiting_concentration':Q(0.1, 'mM'),
+  'production_rate':Q(0.1, 'mM/day'),
   }
 
 actuation = {
@@ -178,7 +177,7 @@ depletation / saturation of CO2 in gaseous phase that causes C* to change.
 Temporary fix is dividing kLa by 10."""
 kLa_ratio = {
   'dO2':1,
-  'dCO2':0.95/15,
+  'dCO2':0.95/25,
   'dCO':1.03,
   }
 

@@ -16,14 +16,14 @@ import numpy as np
 from quantities import Quantity as Q
 import quantities as q
 
-import tests, param
+import tests, param, helper_functions
 
 
 class machine:
   """All machines have a random calibration error.  They then drift until 
   recalibrated."""
   # def __init__(self):
-  #   self.systematic_error = random.gauss(1, self.sys_err_sigma)
+  #   self.systematic_error = helper_functions.gauss(1, self.sys_err_sigma)
 
 
 class probe(machine):
@@ -43,9 +43,9 @@ class scale(machine):
       self.cc_density = float(self.cc_density)
   def read_value(self, environment, _):
     if param.skip_units:
-      random_error = random.gauss(0, self.p['random_error_sigma'])
+      random_error = helper_functions.gauss(0, self.p['random_error_sigma'])
     else:
-      random_error = random.gauss(Q(0, 'kg'), self.p['random_error_sigma'])
+      random_error = helper_functions.gauss(Q(0, 'kg'), self.p['random_error_sigma'])
     mass = environment['volume']*self.cc_density + random_error
     return {'mass': mass}
   
@@ -58,7 +58,7 @@ class O2_probe(probe):
   
   def __init__(self, time, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.drift_slope = random.gauss(0, self.p['drift_CV'])
+    self.drift_slope = helper_functions.gauss(0, self.p['drift_CV'])
     #Large offset as probe isn't yet calibrated
     self.sys_error = 5
     self.value = 100
@@ -71,14 +71,14 @@ class O2_probe(probe):
   def one_point(self, time, value = 100):
     self.cal_time = time
     self.sys_error = self.reference.read_O2_value(value) - \
-      value + random.gauss(0, self.p['random_CV'])    
+      value + helper_functions.gauss(0, self.p['random_CV'])    
   
   def read_value(self, environment, cells):
     # time_delta is time since last calibration
     
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
-    random_error = random.gauss(0, self.p['random_CV'])
+    random_error = helper_functions.gauss(0, self.p['random_CV'])
     percent_DO = environment['dO2']*self.conversion_constant
     value = percent_DO*(1+drift_error+random_error)+self.sys_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
@@ -93,7 +93,7 @@ class pH_probe(probe):
   
   def __init__(self, time, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.drift_slope = random.gauss(0, self.p['drift_sigma'])
+    self.drift_slope = helper_functions.gauss(0, self.p['drift_sigma'])
     #Large offset as probe isn't yet calibrated
     self.sys_error = 5
     self.value = 7
@@ -102,14 +102,14 @@ class pH_probe(probe):
   def one_point(self, time, value = 7):
     self.cal_time = time
     self.sys_error = self.reference.read_pH_value(value) - \
-      value + random.gauss(0, self.p['random_sigma'])    
+      value + helper_functions.gauss(0, self.p['random_sigma'])    
   
   def read_value(self, environment, cells):
     # time_delta is time since last calibration
     
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
-    random_error = random.gauss(0, self.p['random_sigma'])
+    random_error = helper_functions.gauss(0, self.p['random_sigma'])
     value = environment['pH']+drift_error+random_error+self.sys_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
     return {'pH': self.value}
@@ -124,14 +124,14 @@ class temperature_probe(machine):
   def __init__(self, **kwargs):
     super().__init__(**kwargs)
     #Large offset as probe isn't yet calibrated
-    self.sys_error = random.gauss(0, self.p['systematic_sigma'])
+    self.sys_error = helper_functions.gauss(0, self.p['systematic_sigma'])
     self.value = 30
     self.ratio = 1-(1-0.98)**(param.resolution/self.p['t98'])
     
   
   def read_value(self, environment, cells):
     # time_delta is time since last calibration
-    random_error = random.gauss(0, self.p['random_sigma'])
+    random_error = helper_functions.gauss(0, self.p['random_sigma'])
     value = environment['temperature']+self.sys_error+random_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
     return {'temperature': self.value}
@@ -143,20 +143,20 @@ class BGA(machine):
   p = param.instrumentation['BGA']
   
   def __init__(self):
-    self.O2_systematic_error = random.gauss(0, self.p['O2_systematic_error_CV'])
-    self.CO2_systematic_error = random.gauss(0, self.p['CO2_systematic_error_CV'])
-    self.pH_systematic_error = random.gauss(0, self.p['pH_systematic_error_sigma'])
+    self.O2_systematic_error = helper_functions.gauss(0, self.p['O2_systematic_error_CV'])
+    self.CO2_systematic_error = helper_functions.gauss(0, self.p['CO2_systematic_error_CV'])
+    self.pH_systematic_error = helper_functions.gauss(0, self.p['pH_systematic_error_sigma'])
     
   def read_O2_value(self, value):
-    random_error = random.gauss(0, self.p['O2_random_error_CV'])
+    random_error = helper_functions.gauss(0, self.p['O2_random_error_CV'])
     return value * (1+ random_error + self.O2_systematic_error)
   
   def read_CO2_value(self, value):
-    random_error = random.gauss(0, self.p['CO2_random_error_CV'])
+    random_error = helper_functions.gauss(0, self.p['CO2_random_error_CV'])
     return value * (1+ random_error + self.CO2_systematic_error)
     
   def read_pH_value(self, value):
-    random_error = random.gauss(0, self.p['pH_random_error_sigma'])
+    random_error = helper_functions.gauss(0, self.p['pH_random_error_sigma'])
     return value + random_error + self.pH_systematic_error
   
   def read_value(self, environment, cells):
@@ -177,9 +177,9 @@ class bioHT(machine):
     available_assays = ['glucose', 'IGG', 'ammonia', 'glutamine', 'iron']
     self.sys_error = {}
     for assay in available_assays:
-      self.sys_error[assay] = random.gauss(0, self.p['systematic_error_CV'])
+      self.sys_error[assay] = helper_functions.gauss(0, self.p['systematic_error_CV'])
     self.error_CV = lambda assay: (
-      1+random.gauss(0, self.p['random_error_CV'])+self.sys_error[assay]) 
+      1+helper_functions.gauss(0, self.p['random_error_CV'])+self.sys_error[assay]) 
     
   def read_value(self, assay, env, cells):
     if assay == 'IGG':
@@ -200,26 +200,33 @@ class cell_counter(machine):
     self.update_calibration()
 
   def update_calibration(self):
-    self.density_sys_error = random.gauss(0, self.p['density_systematic_error_CV'])
-    self.via_sys_error = random.gauss(0, self.p['viability_systematic_error_sigma'])
+    self.density_sys_error = helper_functions.gauss(0, self.p['density_systematic_error_CV'])
+    self.via_sys_error = helper_functions.gauss(0, self.p['viability_systematic_error_sigma'])
     if param.skip_units:
-      self.size_sys_error = random.gauss(0, self.p['size_systematic_error_sigma'])
+      self.size_sys_error = helper_functions.gauss(0, self.p['size_systematic_error_sigma'])
     else:
-      self.size_sys_error = random.gauss(Q(0, 'm'), self.p['size_systematic_error_sigma'])
+      self.size_sys_error = helper_functions.gauss(Q(0, 'm'), self.p['size_systematic_error_sigma'])
       
     
   def read_value(self, env, cells):
     # time_delta is time since last calibration
-    random_error = random.gauss(0, self.p['density_random_error_CV'])
+    random_error = helper_functions.gauss(0, self.p['density_random_error_CV'])
     VCD = cells['living_cells'] /env['volume']
     VCD *=(1+random_error+self.density_sys_error)
+    
     if param.skip_units:
-      random_error = random.gauss(0, self.p['size_random_error_sigma'])
+      random_error = helper_functions.gauss(0, self.p['size_random_error_sigma'])
     else:
-      random_error = random.gauss(Q(0,'m'), self.p['size_random_error_sigma'])
-    cell_size = cells['diameter']+self.size_sys_error
-    random_error = random.gauss(0, self.p['viability_random_error_sigma'])
-    viability = cells['living_cells']/cells['total_cells']+random_error+self.via_sys_error
+      random_error = helper_functions.gauss(Q(0,'m'), self.p['size_random_error_sigma'])
+    cell_size = cells['diameter']+self.size_sys_error+random_error
+    
+    random_error = helper_functions.gauss(0, self.p['viability_random_error_sigma'])
+    viability = cells['living_cells']/cells['total_cells']
+    error_frac = random_error+self.via_sys_error
+    if error_frac > 0:
+      viability = (error_frac+viability*(1-error_frac))
+    else:
+      viability *= 1+error_frac
     return {'VCD': VCD, 'cell_diameter': cell_size, 'viability': viability}
 
 class osmo(machine):
@@ -235,11 +242,11 @@ class osmo(machine):
     self.units = Q(1, 'mol/m**3')
     if param.skip_units:
       self.units = 1
-    self.sys_error = random.gauss(0, self.p['systematic_sigma'])*self.units
+    self.sys_error = helper_functions.gauss(0, self.p['systematic_sigma'])*self.units
   
   def read_value(self, environment, cells):
     # time_delta is time since last calibration
-    random_error = random.gauss(0, self.p['random_sigma'])*self.units
+    random_error = helper_functions.gauss(0, self.p['random_sigma'])*self.units
     value = environment['mOsm']+self.sys_error+random_error
     return {'mOsm': value}
 
