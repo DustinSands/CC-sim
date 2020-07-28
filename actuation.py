@@ -14,18 +14,21 @@ class mixture:
   """Holds components in a mixture.  Introduces error in the exact amount of 
   components in the mixture as well as handles things like changeouts.
   
-  Changeouts happen whenever empty.  Can be updated later."""
+  Changeouts happen whenever empty.  Can be updated later.
+  
+  Max added is the maximum mixture available.  None is no limit."""
   p2 = param.actuation['mixtures']
-  def __init__(self, mixture_components, reservoir_size):
+  def __init__(self, mixture_components, reservoir_size, max_added = None):
     """mixture_components:
       dict of component along with target concentration (g/L)
     """
-    if reservoir_size ==None:
-      reservoir_size = Q(1., 'L').simplified
-    
+    if max_added == None:
+      max_added = Q(1000000, 'm**3')
+    self.max = max_added.simplified
     self.target_molarity = {}
     self.mixture_definition = mixture_components.copy()
-    self.size = reservoir_size.simplified
+    self.empty = False
+    self.total = Q(0, 'm**3')
     
     for component, concentration in mixture_components.items():
       if concentration.simplified.dimensionality == \
@@ -34,9 +37,16 @@ class mixture:
                                            param.molecular_weight[component]).simplified
       else: 
         self.target_molarity[component] = concentration.simplified
+        
+    if reservoir_size ==None:
+      reservoir_size = Q(1., 'L').simplified
+    self.size = reservoir_size.simplified
+    
     if param.skip_units:
       self.size = float(self.size)
       helper_functions.remove_units(self.target_molarity)
+      self.total = float(self.total)
+      self.max = float(self.max)
     
     self.replace_source()
       
@@ -48,12 +58,34 @@ class mixture:
     for component, molarity in self.molarity.items():
       output[component] = molarity*liquid_rate
     output['liquid_volumetric_rate'] = liquid_rate
+    if self.empty:
+      output['liquid_volumetric_rate'] *= 0
     return output
     
   def replace_source(self):
     """Generates new mixture with fresh errors."""
-    self.molarity = helper_functions.create_media(self.target_molarity)
-    self.remaining = self.size
+    
+    if self.total + self.size < self.max:
+      # Full topup
+      self.molarity = helper_functions.create_media(self.target_molarity)
+      self.remaining = self.size
+      self.total += self.size
+    elif self.total != self.max:
+      # Last topup
+      print('last')
+      self.molarity = helper_functions.create_media(self.target_molarity)
+      self.remaining = self.max - self.total
+      self.total = self.max
+    else:
+      # Empty
+      print('empty')
+      self.remaining = self.size
+      self.empty = True
+      if param.skip_units:
+        self.molarity = helper_functions.create_media({'nothing':0})
+      else:
+        self.molarity = helper_functions.create_media({'nothing':Q(0, 'mol/m**3')})
+    # pdb.set_trace()
     
   def calc_osmo(self):
     """Technically this is using actual osmo instead of osmo from media definiton.
@@ -80,7 +112,7 @@ class MFC:
                error_CV = p['systematic_error_CV'], break_chance = 
                p['break_chance']):
     """test doc"""
-    self.systematic_error = random.gauss(1, error_CV)
+    self.systematic_error = helper_functions.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
     self.set_point = Q(0, 'L/min').simplified
@@ -106,6 +138,7 @@ class peristaltic():
   Includes chance to break. (Default: 1/yr)"""
   p = param.actuation['peristaltic']
   def __init__(self, mixture_components,
+               max_added = None,
                source_size = None, 
                self_correcting = False, 
                error_CV = p['systematic_error_CV'], 
@@ -115,11 +148,11 @@ class peristaltic():
     
     source_size affects how often it is changed out with a new batch (new errors)
     """
-    self.systematic_error = random.gauss(1, error_CV)
+    self.systematic_error = helper_functions.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
     self.set_point = Q(0, 'ml/min').simplified
-    self.source = mixture(mixture_components, source_size)
+    self.source = mixture(mixture_components, source_size, max_added = max_added)
     self.break_chance = float((break_chance*param.q_res).simplified)*param.allow_breaking
     
     if param.skip_units:
@@ -153,7 +186,7 @@ class agitator:
                error_CV = p['systematic_error_CV'], 
                break_chance = p['break_chance']):
 
-    self.systematic_error = random.gauss(1, error_CV)
+    self.systematic_error = helper_functions.gauss(1, error_CV)
     # 1 = working fine, 0 = broken
     self.broken_mult = 1
     self.set_point = RPS.simplified
@@ -199,14 +232,14 @@ class wrapper:
                 'gas_volumetric_rate', 'RPS', 'heat']}
     else:
       actuation =  {}
-      actuation['liquid_volume']=Q(0., 'L/min').simplified
-      actuation['gas_volume']=Q(0., 'L/min').simplified
-      actuation['RPS'] = Q(0., '1/s').simplified
-      actuation['heat'] = Q(0., 'W').simplified
+      actuation['liquid_volumetric_rate']=Q(0., 'm**3/s')
+      actuation['gas_volumetric_rate']=Q(0., 'm**3/s')
+      actuation['RPS'] = Q(0., '1/s')
+      actuation['heat'] = Q(0., 'kg*m**2/s**3')
       for item in param.liquid_components:
-        actuation[item]=Q(0., 'mol/min').simplified
+        actuation[item]=Q(0., 'mol/s')
       for item in param.gas_components:
-        actuation[item] = Q(0., 'L/min').simplified
+        actuation[item] = Q(0., 'm**3/s')
     
     for item in self.actuation_list:
       components_added = item.step()
