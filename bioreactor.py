@@ -98,6 +98,8 @@ class bioreactor:
     self.solubility_units = Q(1, 's**2*mol/(kg*m**2)') # Solubility / pressure
     self.volumetric_heat_capacity = param.volumetric_heat_capacity
     self.molar = Q(1, 'M').simplified
+    self.kLa = Q(1e-10, '1/s') #Needs initial nonzero value
+    self.old = {component:Q(0, 'mol/s') for component in param.liquid_components}
     
     if param.skip_units == 1:
       self.volume = float(self.volume)
@@ -112,13 +114,18 @@ class bioreactor:
       self.solubility_units = float(self.solubility_units)
       self.volumetric_heat_capacity = float(self.volumetric_heat_capacity)
       self.molar = float(self.molar)
+      self.kLa = float(self.kLa)
+      self.old = {component: 0 for component in param.liquid_components}
 
+    
     self.agitator = agitator
     self.current_time = start_time
     # self.sparger_num_pores = num_pores
     self.kla_func = self.create_kla_function()
-    self.old = {}
     self.temperature = initial_temperature
+    self.gas_percentages = {'dO2':0.21,
+                            'dCO2':0.00045}
+    
     
 
     
@@ -139,11 +146,14 @@ class bioreactor:
     if not (actuation == self.old and actuation['liquid_volumetric_rate'] == 0):
       self.old = actuation.copy()
       # Is this in per hour or per minute?
-      self.kla = self.kla_func(actuation['RPS'], actuation['gas_volumetric_rate'], self.working_volume)
+      self.kLa = self.kla_func(actuation['RPS'], actuation['gas_volumetric_rate'], self.working_volume)
       self.gas_percentages = self.calc_gas_percentages(actuation)
       self.update_shear(actuation['RPS'])
       
   def calc_gas_percentages(self,actuation):
+    """Takes all of the gas flowrates being input and calculates the 
+    percentages of each component in it.  Must also convert air to O2 and CO2.
+    """
     if param.skip_units: total = 0
     else: total = Q(0., 'L/min').simplified
     percent = {}
@@ -155,45 +165,63 @@ class bioreactor:
     percent['dO2'] += percent['dair']*0.21
     percent['dCO2'] += percent['dair']*0.00045
     return percent
-    
-  def step(self, actuation, cells):
-    """Calculate environmental changes."""
-    self.check_and_update(actuation)
-    
-    cell_fraction = cells['total_cells']*cells['volume']/self.one_cell/self.working_volume
-    if cell_fraction > 1:
-      print('Wayyyyy too many cells')
-
-
+  
+  def calc_max_consumption(self, actuation):
+    """Calculates the maximum average consumption that can be used by cells 
+    before the concentration will reach negative values next step."""
+    max_consumption = {}
     for component in param.liquid_components:
       if component[1:] in param.gas_components:
         solubility = get_solubility[component](self.temperature)*\
           self.pressure*self.solubility_units
         C_star = self.gas_percentages[component]*solubility
-        kLa = self.kla*param.kla_ratio[component]
-        transfer_coeff = math.exp(-kLa*param.step_size)
+        kLa = self.kLa*param.kLa_ratio[component]
+        k_t = math.exp(-kLa*param.step_size)
+        max_consumption[component] = self.working_volume * kLa * C_star + \
+          self.mole[component]*kLa*k_t/(1-k_t)
+      else:
+        max_consumption[component] = actuation[component] + \
+          self.mole[component]/param.step_size
+    return max_consumption
+    
+  def step(self, actuation, cells):
+    """Calculate environmental changes."""
+
+    #Calculate updates from previous step (before updating params)
+    for component in param.liquid_components:
+      if component[1:] in param.gas_components:
+        solubility = get_solubility[component](self.temperature)*\
+          self.pressure*self.solubility_units
+        C_star = self.gas_percentages[component]*solubility
+        kLa = self.kLa*param.kLa_ratio[component]
+        k_t = math.exp(-kLa*param.step_size)
         # if component == 'dCO2':
-        #   pdb.set_trace()
-        self.mole[component] = transfer_coeff*self.mole[component] + (1-transfer_coeff)*\
+        mol = k_t*self.mole[component] + (1-k_t)*\
           (C_star*self.working_volume - cells['mass_transfer'][component]/kLa)
+        if mol < -1e-10:
+          pdb.set_trace()
+        self.mole[component] = mol
+        
       else: 
-        transfer_rate = actuation[component]
+        transfer_rate = self.old[component]
         # if component =='glucose':
         #   print('BR', component, transfer_rate, self.mole[component])
         self.mole[component] += (transfer_rate - cells['mass_transfer'][component]) * param.step_size
+
+    self.check_and_update(actuation)
     self.working_volume += actuation['liquid_volumetric_rate']*param.step_size
     # print(cells['mass_transfer']['dO2'], cells['mass_transfer']['dCO2'])
     #Temperature
+    k_t = math.exp(-self.overall_heat_transfer_coeff*param.step_size/\
+                   self.working_volume/self.volumetric_heat_capacity)
+    self.temperature = (1-k_t)*(param.environment_temperature+\
+                        actuation['heat']/self.overall_heat_transfer_coeff)+\
+      self.temperature*k_t
 
-    heat_transfer = actuation['heat'] + \
-      (param.environment_temperature-self.temperature)*\
-        self.overall_heat_transfer_coeff
-    self.temperature += heat_transfer*param.step_size /\
-      (self.working_volume*self.volumetric_heat_capacity)
-
-    
+    cell_fraction = cells['total_cells']*cells['volume']/self.one_cell/self.working_volume
+    if cell_fraction > 1:
+      print('Wayyyyy too many cells')
     osmo = self.total_moles()/(self.working_volume*(1-cell_fraction))
-    
     #Build output
     environment={'shear':self.mean_shear, 
                  'max_shear':self.max_shear,
@@ -205,7 +233,7 @@ class bioreactor:
                         }
     for component in param.liquid_components:
       environment.update({component:self.mole[component]/self.working_volume})
-      
+    environment['max_consumption'] = self.calc_max_consumption(actuation)
     return environment
     
   def total_moles(self):
@@ -232,7 +260,6 @@ class bioreactor:
         net_charge -= self.mole[species]/self.working_volume/self.molar
     pH = -math.log10((-net_charge/2+math.sqrt((net_charge/2)**2+\
       10**-14+10**-6.36*1.0017*self.mole['dCO2']/self.working_volume/self.molar)))
-    # print(pH, self.mole['dCO2']/self.working_volume)
     return pH
   
   def create_kla_function(self):

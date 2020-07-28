@@ -11,6 +11,13 @@ import quantities as q
 
 import param
 
+def gauss(mean, std):
+  """Mock random function to ensure consistent results in debug."""
+  if param.debug:
+    return mean
+  else:
+    return random.gauss(mean, std)
+
 def create_media(target_molarity):
   """Takes the media definition and returns a created media.
   Includes: 
@@ -32,7 +39,8 @@ def create_media(target_molarity):
     elif component == 'KCl':
       component = ['K', 'Cl']
     else: component = [component]
-    error_ratio = random.gauss(1, param.actuation['mixtures']['component_CV'])
+    
+    error_ratio = gauss(1, param.actuation['mixtures']['component_CV'])
     
     for species in component:
       if species in param.liquid_components:
@@ -114,13 +122,18 @@ rescale_unit_lookup = {
 
 def get_plotfunc(ax, param):
   """Decides whether the appropriate plotting function is a step or line plot.
+  
+  Also adds markers for offline variables.
   """
   steps = ['glucose addition rate', 'glucose feed rate', 'mOsm feed rate', 
-           'mOsm addition rate']
+           'mOsm addition rate', 'Concentrated Feed']
+  offline = ['IGG', 'VCD', 'glucose', 'mOsm', 'viability', 'cell_diameter']
   if param in steps:
     func = lambda x, y, **kwargs: ax.step(x, y, where='post', **kwargs)
+  elif param in offline:
+    func = lambda *args, **kwargs: ax.plot(*args, **kwargs, marker = 'x')
   else:
-    func = ax.plot
+    func = lambda *args, **kwargs: ax.plot(*args, **kwargs)
   return func
 
 def scale_units(assays):
