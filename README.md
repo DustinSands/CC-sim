@@ -1,16 +1,10 @@
 # CellCulture-Simulator (CC-Sim)
-An upstream bioprocess simulator that comes with a CHO-cell model.
-Allows for the generation of cell-culture data.
-
 CC-Sim (CellCulture-Simulator) aims to digitally model the cell culture process, 
 combining a cell model, control strategies, bioreactors, actuation devices, 
 assays, and media definitions in order to simulate the defined platform and 
 increase process understanding. 
 
 For more information, visit: https://portfolio.dustinsands.com/cc-sim/
-
-CC-Sim is a System-Level Simultation written in Python for 
-
 
 Currently implemented:
   Various assays, all with their own forms of error (systematic, drift, random)
