@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Holds global parameters for the simulation
+Holds global parameters for the simulation.  
 """
-import pdb
 
 import numpy as np
 import quantities as q

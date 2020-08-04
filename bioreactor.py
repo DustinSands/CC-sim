@@ -73,7 +73,6 @@ class bioreactor:
                  diameter = Q(13, 'cm'),     
                  sparger_height = Q(2, 'cm'), # Height from bottom of vessel
                  sparger_pore_size = Q(20, 'um'),
-                 # num_pores = 10000,
                  cell_separation_device = None,     # Perfusion only
                  head_pressure = Q(760, 'mmHg'),
                  heat_transfer_coeff = Q(50, 'W/m**2'), #per degree (not supported)

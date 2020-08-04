@@ -98,6 +98,8 @@ base_unit_lookup = {
   'CO2':'m**3/s',
   'O2':'m**3/s',
   'target_diameter':'m',
+  'rVCD':'ce/m**3',
+  'total_cell_volume':'m**3',
   }
 
 rescale_unit_lookup = {
@@ -118,6 +120,8 @@ rescale_unit_lookup = {
   'CO2':'ml/min',
   'O2':'ml/min',
   'target_diameter':'um',
+  'rVCD':'e5c/ml',
+  'total_cell_volume':'L',
   }
 
 timer = {}

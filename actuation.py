@@ -98,14 +98,11 @@ class mixture:
       total += molarity
     return total
 
-      
-    
-
 class MFC:
   """Takes setpoint and returns actual amount dispensed.  Includes constant 
   systematic error and random error.  Both are minimal.
   
-  In: Volumetric flowrate
+  In: Volumetric flowrate (as setpoint)
   Out: Volumetric flowrate"""
   p = param.actuation['MFC']
   def __init__(self, component, self_correcting = False, 
@@ -203,29 +200,14 @@ class agitator:
         self.broken_mult = 0
     rate = self.systematic_error * self.set_point * self.broken_mult
     return {'RPS':rate}
-# class scale:
-#   """A scale.  Assumes you're using it within range.  These things are pretty
-#   reliable and accurate, so no sources of error introduced here."""
 
 class wrapper:
   def __init__(self, actuation_list):
+    """Takes the actuation list that must be cycled through every step."""
     self.actuation_list = actuation_list
-    # self.initial_actuation =  {}
-    # self.initial_actuation['liquid_volume']=Q(0., 'L/min').simplified
-    # self.initial_actuation['gas_volume']=Q(0., 'L/min').simplified
-    # self.initial_actuation['RPS'] = Q(0., '1/s').simplified
-    # self.initial_actuation['heat'] = Q(0., 'W').simplified
-    # for item in param.liquid_components:
-    #   self.initial_actuation[item]=Q(0., 'mol/min').simplified
-    # for item in param.gas_components:
-    #   self.initial_actuation[item] = Q(0., 'L/min').simplified
-    # if param.skip_units:
-    #   helper_functions.remove_units(self.initial_actuation)
     
   def step(self):
-
-    # actuation = self.initial_actuation.copy()
-    
+    #Create a value of 0 for everything
     if param.skip_units:
       actuation = {component:0 for component in [*param.liquid_components, 
                 *param.gas_components, 'liquid_volumetric_rate',
@@ -241,15 +223,16 @@ class wrapper:
       for item in param.gas_components:
         actuation[item] = Q(0., 'm**3/s')
     
+    # Cycle through all actuation components and sum results
     for item in self.actuation_list:
       components_added = item.step()
       for key, value in components_added.items():
-        # print(item, key, value)
         actuation[key] += value
-        
-    gas_volume = Q(0., 'L/min')
+    
+    #Computer total gas volumetric rate
     for component in param.gas_components:
       actuation['gas_volumetric_rate'] += actuation[component]
+      
     return actuation
     # for component in param.liquid_components:
     #   actuation.update({component:    })

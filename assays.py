@@ -173,9 +173,9 @@ class bioHT(machine):
   p = param.instrumentation['bioHT']
   def __init__(self, **kwargs):
     super().__init__(**kwargs)
-    #Large offset as probe isn't yet calibrated
     available_assays = ['glucose', 'IGG', 'ammonia', 'glutamine', 'iron']
     self.sys_error = {}
+    #Create systematic errors for each assay
     for assay in available_assays:
       self.sys_error[assay] = helper_functions.gauss(0, self.p['systematic_error_CV'])
     self.error_CV = lambda assay: (
@@ -187,8 +187,6 @@ class bioHT(machine):
     else: value = env[assay]
     
     return {assay: value*self.error_CV(assay)*param.molecular_weight[assay]}
-  
-    # return {assay:value(environment[assay],assay) for assay in self.assay_list}
 
 
 class cell_counter(machine):
@@ -253,7 +251,7 @@ class osmo(machine):
   
 class wrapper:
   """Main class that performs all the assays."""
-  def __init__(self, osmo, BGA_instance, cell_counter,  start_time, bioHT=None,
+  def __init__(self, start_time, osmo, BGA_instance, cell_counter,  bioHT=None,
                bioHT_list=None, pH = True, O2 = True, temp = True,
                use_scale = True, ):
     """Experimental_setup should take the form of:

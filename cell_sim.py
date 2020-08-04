@@ -9,7 +9,6 @@ IGG would look like.  Greatly simplified model that does not cover many cases.
 # viability [%]
 # mass_transfer: {all tracked components}
 
-import random
 import math
 import pdb
 

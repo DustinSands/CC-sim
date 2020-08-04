@@ -75,6 +75,8 @@ class feed_strategy:
   
   
 class constant_feed(feed_strategy):
+  """As the name implies, adds a constant feed.  The name argument specifies
+  what to call the returned metric."""
   def __init__(self, feed_rate, name, start_day = 0,
                feed_mixture = None, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -209,6 +211,8 @@ class PID:
   
   response(% of max) = Kp * D + int(Ki * D) dt - Kd * d value/dt
   where D is (value - setpoint)
+  
+  Needs a controlling strategy.
   """
   alpha = 0.35 #smoothing for derivative
   def __init__(self, Kp, Ki, Kd, set_point, initial_value):
@@ -226,8 +230,8 @@ class PID:
     self.deriv = (1-self.alpha) * self.deriv + self.alpha * (value - self.last_value)
     self.last_value = value
     response = self.kp * D + self.error_int - self.deriv*self.kd
-    # print(self.kp * D, self.error_int, -self.deriv*self.kd)
-    if not (0 <= response <= 100):
+    if (response < 0 and self.ki*D < 0) or \
+      (response > 100 and self.ki*D > 0):
       self.error_int -= self.ki*D     #Undo int error if not within range to prevent windup
       if response < 0: response = 0
       else: response = 100    
@@ -240,13 +244,15 @@ class aeration:
   def __init__(self, setpoint, 
                min_air = Q(0.01, 'L/min'), 
                max_air = Q(0.2, 'L/min'), 
-               max_O2 = Q(0.1, 'L/min')):
+               max_O2 = Q(0.1, 'L/min'),
+               K_p = 0.05, 
+               K_i = Q(0.02, '1/min'),
+               K_d = Q(0.05, 'min'),):
     """max_air and max_O2 should be in volumetric flow rates."""
     
     self.sp = setpoint
     
-    self.PID = PID(0.05, Q(0.02, '1/min'), Q(0.05, 'min'), 
-                   setpoint, 5)
+    self.PID = PID(K_p, K_i, K_d, setpoint, 5)
     self.actuation = [actuation.MFC('air'), actuation.MFC('O2'), actuation.agitator(Q(300/60., '1/s'))]
     self.max_air = max_air.simplified
     self.max_O2 = max_O2.simplified
@@ -259,8 +265,6 @@ class aeration:
       self.min_air = float(self.min_air)
       self.zero = float(self.zero)
     
-
-    
   def step(self, obs, offline):
     PID_out = self.PID.step(obs['dO2'])
     if PID_out < 50:
@@ -272,7 +276,10 @@ class aeration:
     return {'aeration_PID':PID_out}
 
 class pH:
-  """CO2 Aeration control strategy to control pH within set range."""
+  """CO2 Aeration control strategy to control pH within set range.
+  
+  Currently implemented: max pH controlled with CO2
+  Future: minimum pH copntrolled by adding base."""
   def __init__(self, max_pH, 
                min_CO2 = Q(0, 'L/min'), 
                max_CO2 = Q(0.1, 'L/min'),):
@@ -296,6 +303,7 @@ class pH:
     return {'pH_PID':PID_out}
 
 class temperature:
+  """Adds heat to control temperature."""
   def __init__(self, setpoint, max_heating = Q(100, 'W')):
     self.PID = PID(10, Q(1, '1/min'), Q(3, 'min'), 
                    setpoint, 50)
@@ -308,8 +316,10 @@ class temperature:
   
 class wrapper:
   def __init__(self, control_setup):
-    """control_setup is list of controls that are already initialized.
-    Setup creates a list of actuation.
+    """control_setup is list of tuples for each control.
+    Tuple is in format (control, *args, **kwargs)
+    
+    Setup initializes each control and creates an actuation list.
       """
     self.actuation_list = []
     self.control_list = []
@@ -324,7 +334,6 @@ class wrapper:
       metric = control.step(assays, offline)
       metrics.update(metric)
     
-      
     return metrics
 
 
