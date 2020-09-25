@@ -4,14 +4,15 @@ Main script to set up desired config, run simulation, and plot results from
 
 @author: Dustin Sands
 """
+import pdb
 
 import numpy as np
 from quantities import Quantity as Q
 from matplotlib import pyplot as plt
 
-
-import assays, cell_sim, controls, helper_functions
+import assays, cell_sim, controls, helper_functions, bioreactor
 from simulator import run_experiments
+from analysis import dual_plot, dual_subplot, analyze
 
 #Define the media to be used
 example_media = {
@@ -42,20 +43,90 @@ example_concentrated_media = {'NaHCO3':Q(22, 'mM'),
                               'NaCl':Q(100., 'mM'),
                               'KCl':Q(80., 'mM')
                               }
+example_perfusion_media = {'NaHCO3':Q(22, 'mM'), 
+                           'dO2':Q(0.21, 'mM'), 
+                           'glucose':Q(110, 'mM'), 
+                           'amino_acids':Q(180, 'mM'),
+                           'lactate':Q(4.99, 'mM'),
+                           'NaCl':Q(70., 'mM'),
+                           'KCl':Q(40., 'mM'),
+                           }
+# example_media_concentrate = {'NaHCO3':Q(88, 'mM'), 
+#                               'dO2':Q(0.21, 'mM'), 
+#                               'glucose':Q(50, 'mM'), 
+#                               'amino_acids':Q(700, 'mM'),
+#                               'lactate':Q(20, 'mM'),
+#                               'NaCl':Q(200., 'mM'),
+#                               'KCl':Q(150., 'mM')
+#                               }
 
+def create_perfusion_config(num_experiments, 
+                            cell_line = None,
+                            glucose_sp = Q(3, 'g/L'),
+                            seed_density = Q(10, 'e6c/ml'),
+                            equipment_instances = None):
+  """Config creator for perfusion experiments."""
+  start_time = np.datetime64('2020-01-01')
+  initial_volume = Q(2, 'L')
+  starting_cells = initial_volume*seed_density
+  if cell_line == None:
+    cell_line = cell_sim.gen_cell_line()
+  if equipment_instances == None:
+    #Same BGA, cell_counter, bioHT instance for all
+    equipment_instances = {'osmo':assays.osmo(),
+                           'BGA_instance':assays.BGA(), 
+                           'cell_counter':assays.cell_counter(),
+                           'bioHT':assays.bioHT(),}
 
+  #Set up assays to be run
+  assay_setup = {**equipment_instances,
+                 'start_time':start_time,
+                 'bioHT_list':['glucose', 'IGG'],  
+                 'recirc_flowmeter':True, #flowmeter
+                 'levitronix_RPM': True, #levitronix RPM
+                 }
+  
+  # Set up controls.  Each control has its own setup
+  perfusion_feed = (controls.basic_perfusion_feed, [], 
+                    {'feed_mixture':example_perfusion_media,
+                    'initial_volume':initial_volume,
+                    'sample_interval':Q(24, 'h'), 
+                    'cpp':'mOsm', 
+                    'set_point':Q(350, 'mM'), 
+                    'initial_time': start_time, 
+                    'target_seeding_density':seed_density,
+                    'max_added':Q(50, 'L'),
+                    'initial_VVD':Q(0.4, '1/d'),
+                    'glucose_setpoint':glucose_sp,}
+                    )
+  aeration_setup = (controls.aeration,[],
+                    {'setpoint':60, 'max_air':Q(0.2, 'L/min'), 
+                    'max_O2':Q(0.3, 'L/min'),}
+                    )
+  control_setup = [perfusion_feed,
+                   aeration_setup,
+                   (controls.temperature, [36], {}),
+                   (controls.pH, [7.15], {}),
+                   (controls.recirculation,[Q(1, 'L/min')],{}),
+                   ]
+  media = helper_functions.create_media_as_mole(example_media, initial_volume)
+  br_setup = {'start_time':start_time,
+              'initial_components':media,
+              'seed_volume':initial_volume,
+              'initial_temperature':36,
+              'cell_separation_device':bioreactor.PES()
+              }
+  cell_setup = {'cell_line':cell_line, 
+                'seed_cells':starting_cells}
+  config = (assay_setup, control_setup, br_setup, cell_setup)
+  return [config]*num_experiments
 
-
-        
-
-def create_config(num_experiments, 
+def create_batch_config(num_experiments, 
                   cell_line = None,
                   glucose_sp = Q(1.5, 'g/L'),
                   seed_density = Q(10, 'e5c/ml'),
                   equipment_instances = None):
-  """Create a configuration for an experiment.
-  """
-  
+  """Config creator for fed-batch experiments."""
   start_time = np.datetime64('2020-01-01')
   initial_volume = Q(0.5, 'L')
   seed_density = seed_density
@@ -63,6 +134,7 @@ def create_config(num_experiments,
   if cell_line == None:
     cell_line = cell_sim.gen_cell_line()
   if equipment_instances == None:
+    #Same BGA, cell_counter, bioHT instance for all
     equipment_instances = {'osmo':assays.osmo(),
                            'BGA_instance':assays.BGA(), 
                            'cell_counter':assays.cell_counter(),
@@ -114,155 +186,70 @@ def create_config(num_experiments,
   config = (assay_setup, control_setup, br_setup, cell_setup)
   return [config]*num_experiments
 
-
-       
-        
-def dual_subplot(y11_param, y12_param, y21_param, y22_param, metrics = None,
-                 big_title = None, left_title = None, right_title = None):
-  """Plots two variables on two each of plots, then puts them next to each
-  other."""
-  fig = plt.figure(figsize = (10, 4))
-  # spec = fig.add_gridspec(2, 1)
-  ax1 = fig.add_subplot(121)
-  plot_var(ax1, y11_param, metrics, color = 'red')
-  
-  ax2 = ax1.twinx()
-  plot_var(ax2, y12_param, metrics, color = 'blue')
-  
-  if left_title != None:
-    ax1.set_title(left_title)
-  
-  ax3 = fig.add_subplot(122)
-  plot_var(ax3, y21_param, metrics, color = 'red')
-  
-  ax4 = ax3.twinx()
-  plot_var(ax4, y22_param, metrics, color = 'blue')
-  
-  if right_title != None:
-    ax3.set_title(right_title)
-  
-  if big_title != None:
-    fig.suptitle(big_title, y = 1.04)
-  fig.tight_layout()
-  fig.dpi = 200
-  plt.show()
-  plt.close()
-
-def dual_plot( y1_param, y2_param, metrics=None):
-  """Plot two different metrics on one graph."""
-  fig, ax1 = plt.subplots()
-  plot_var(ax1, y1_param, metrics = metrics, color = 'red')
-  
-  ax2 = ax1.twinx()
-  plot_var(ax2, y2_param, metrics = metrics, color = 'blue')
-  
-  fig.tight_layout()
-  fig.dpi = 200
-  plt.show()
-  plt.close()
-  
-def plot_var(axis, variable, metrics, color = 'black'):
-  """Takes an axis to plot on, the metrics, and a variable of interest.  Then
-  plots that variable on that axis."""
-  if metrics == None:
-    metrics = default_metrics
-  plot_func = helper_functions.get_plotfunc(axis, variable)
-  for metric in metrics:
-    tuples = [((metric[point]['time']-metric[0]['time'])/np.timedelta64(1,'D'),
-           metric[point][variable])
-          for point in range(len(metric)) if variable in metric[point]]
-    if len(tuples) > 0:
-      x, y = list(zip(*tuples))
-      plot_func(x, y, color = color)
-
-  if len(tuples) > 0:
-    if max(y)/3> min(y):
-      axis.set_ylim(bottom = -max(y)/100, top = None)
-    if type(y[0]) == Q:
-      axis.set_ylabel(variable+f' {y[0].dimensionality}', color = color)
-    else:
-      axis.set_ylabel(variable, color = color)
-
-  axis.set_xlabel('Day')
-  axis.set_xlim(0, (metric[-1]['time']-metric[0]['time'])/np.timedelta64(1,'D'))
-  
-    
-  
-def multireactor_plot(param, metrics = None, total_days = 14):
-  """Plots all experiments on the same plot for a single parameter"""
-  if metrics == None:
-    metrics = default_metrics
-  fig, ax1 = plt.subplots()
-  for experiment in range(len(metrics)):
-    tuples = [((metrics[experiment][point]['time']-metrics[0]['time'])/np.timedelta64(1,'D'),
-           metrics[experiment][point][y1_param])
-          for point in range(len(metrics)) if y1_param in metrics[experiment][point]]
-    if len(tuples) > 0:
-      x, y = list(zip(*tuples))
-    else:
-      x, y = [], []
-    ax1.plot(x1, y1, color = 'red')
-  ax1.set_xlabel('Day')
-  if len(y1)>0 and type(y1[0]) == Q:
-    ax1.set_ylabel(y1_param+f' {y1[0].dimensionality}', color = 'red')
-  else:
-    ax1.set_ylabel(y1_param, color = 'red')
- 
-  ax1.set_xlim([0, total_days])
-
-
-
-
-
-def run_sim():
-  config = create_config(1)
-  metrics = run_experiments(config)
-  return metrics
-  
-if __name__ == '__main__':
+def run_seed_density_comparison():
+  """As an example run, different seed densities in fed batch were compared.
+  This function creats and runs that example."""
+  #Each config uses the same shared equipment
   shared_equipment = {'osmo':assays.osmo(),
                       'BGA_instance':assays.BGA(), 
                       'cell_counter':assays.cell_counter(),
                       'bioHT':assays.bioHT(),}
-  
+  #Each experiment needs to use the same cell line
   cell_line = cell_sim.gen_cell_line()
-  low_config = create_config(2, 
+  #Create configs for each seed density (two runs each)
+  low_config = create_batch_config(2, 
                              cell_line = cell_line, 
                              equipment_instances = shared_equipment,
                              seed_density = Q(2, 'e5c/ml'),
                              )
-  medium_config = create_config(2, 
+  medium_config = create_batch_config(2, 
                              cell_line = cell_line, 
                              equipment_instances = shared_equipment,
                              seed_density = Q(5, 'e5c/ml'),
                              )
-  high_config = create_config(2, 
+  high_config = create_batch_config(2, 
                              cell_line = cell_line, 
                              equipment_instances = shared_equipment,
                              seed_density = Q(10, 'e5c/ml'),
                              )
+  #Run and plot each configuration
   low_metrics = run_experiments(low_config)
-  
+  analyze(low_metrics)
   dual_subplot('viability', 'VCD', 'mOsm', 'IGG', metrics = low_metrics,
                big_title = r'Seed Density: 2 e5c/ml', left_title = 'Viability vs VCD',
                right_title = 'Osmo vs IGG')
-  # dual_plot('mOsm', 'mOsm feed rate', metrics = low_metrics)
-
-  # dual_plot('pH', 'pH_PID', metrics = low_metrics)
-  # dual_plot('dO2', 'aeration_PID', metrics = low_metrics)
   
   medium_metrics = run_experiments(medium_config)
+  analyze(medium_metrics)
   dual_subplot('viability', 'VCD', 'mOsm', 'IGG', metrics = medium_metrics,
-               big_title = r'Seed Density: 5 e5c/ml', left_title = 'Viability vs VCD',
-               right_title = 'Osmo vs IGG')
-  high_metrics = run_experiments(high_config)
-  dual_subplot('viability', 'VCD', 'mOsm', 'IGG', metrics = high_metrics,
-               big_title = r'Seed Density: 10 e5c/ml', left_title = 'Viability vs VCD',
-               right_title = 'Osmo vs IGG')
+                big_title = r'Seed Density: 5 e5c/ml', left_title = 'Viability vs VCD',
+                right_title = 'Osmo vs IGG')
   
-  dual_plot('mass', 'mOsm feed rate', metrics = low_metrics)
+  high_metrics = run_experiments(high_config)
+  analyze(high_metrics)
+  dual_subplot('viability', 'VCD', 'mOsm', 'IGG', metrics = high_metrics,
+                big_title = r'Seed Density: 10 e5c/ml', left_title = 'Viability vs VCD',
+                right_title = 'Osmo vs IGG')
+  
+  #Compare final mass of highest and lowest config
+  dual_plot('mass', 'mOsm feed sp', metrics = low_metrics)
+  dual_plot('mass', 'mOsm feed sp', metrics = high_metrics)
 
-  dual_plot('mass', 'mOsm feed rate', metrics = high_metrics)
+
+def run_perfusion():
+  """Creates a perfusion configuration and runs it, then plots a couple results."""
+  config = create_perfusion_config(3, glucose_sp = Q(3, 'g/L'))
+  metrics = run_experiments(config)
+  analyze(metrics)
+
+  dual_subplot('VCD', 'viability', 'glucose', 'IGG')
+  dual_plot('sieving', 'permeate rate')
+  return metrics
+
+if __name__ == '__main__':
+  metrics = run_perfusion()
+
+
   
   
 

@@ -16,18 +16,15 @@ import numpy as np
 from quantities import Quantity as Q
 import quantities as q
 
-import tests, param, helper_functions
+import param, helper_functions
 
 
 class machine:
   """All machines have a random calibration error.  They then drift until 
-  recalibrated."""
-  # def __init__(self):
-  #   self.systematic_error = helper_functions.gauss(1, self.sys_err_sigma)
-
+  recalibrated.  Placeholder parent class."""
 
 class probe(machine):
-  """Moves towards correct value each step.
+  """Parent class of all online probes. Moves towards correct value each step.  
   """
 
   def __init__(self, cal_reference):
@@ -36,17 +33,14 @@ class probe(machine):
     self.reference = cal_reference
 
 class scale(machine):
+  """Scale.  Very accurate.  Doesn't break, little errors."""
   p = param.instrumentation['Scale']
-  def __init__(self):
-    self.cc_density = param.actual_cc_density
-    if param.skip_units:
-      self.cc_density = float(self.cc_density)
   def read_value(self, environment, _):
     if param.skip_units:
       random_error = helper_functions.gauss(0, self.p['random_error_sigma'])
     else:
       random_error = helper_functions.gauss(Q(0, 'kg'), self.p['random_error_sigma'])
-    mass = environment['volume']*self.cc_density + random_error
+    mass = environment['mass']+ random_error
     return {'mass': mass}
   
 class O2_probe(probe):
@@ -74,12 +68,11 @@ class O2_probe(probe):
       value + helper_functions.gauss(0, self.p['random_CV'])    
   
   def read_value(self, environment, cells):
-    # time_delta is time since last calibration
-    
+    #time since last calibration
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
     random_error = helper_functions.gauss(0, self.p['random_CV'])
-    percent_DO = environment['dO2']*self.conversion_constant
+    percent_DO = environment['br_molarity']['dO2']*self.conversion_constant
     value = percent_DO*(1+drift_error+random_error)+self.sys_error
     self.value = self.ratio*value+(1-self.ratio)*self.value
     return {'dO2': self.value}
@@ -100,13 +93,13 @@ class pH_probe(probe):
     self.one_point(time)  #auto one-point
     
   def one_point(self, time, value = 7):
+    """Calibrate the probe according to the reference."""
     self.cal_time = time
     self.sys_error = self.reference.read_pH_value(value) - \
       value + helper_functions.gauss(0, self.p['random_sigma'])    
   
   def read_value(self, environment, cells):
     # time_delta is time since last calibration
-    
     time_delta = environment['time'] - self.cal_time
     drift_error = time_delta / np.timedelta64(365, 'D')*self.drift_slope
     random_error = helper_functions.gauss(0, self.p['random_sigma'])
@@ -139,7 +132,10 @@ class temperature_probe(machine):
 class BGA(machine):
   """BGA have very high drift, and as a result are designed to constantly 
   self-calibrate.  Therefor, we assume there is no drift error and instead have 
-  only random error."""
+  only random error.
+  
+  Used both to calibrate probes (with read_XX_value method) as well as take
+  offline measurements."""
   p = param.instrumentation['BGA']
   
   def __init__(self):
@@ -161,6 +157,7 @@ class BGA(machine):
   
   def read_value(self, environment, cells):
     """For BGA usage as part of offline assays."""
+    # offline assay, so don't need to specify ['bioreactor']
     O2 = self.read_O2_value(environment['dO2'])
     pH = self.read_pH_value(environment['pH'])
     # Mole fraction is ~0.9756 for CO2 of total inorganic carbon
@@ -248,12 +245,45 @@ class osmo(machine):
     value = environment['mOsm']+self.sys_error+random_error
     return {'mOsm': value}
 
+class flowmeter:
+  p = param.instrumentation['flowmeter']
+  """Levitronix flowmeter using doppler."""
+  def __init__(self):
+    if param.skip_units:
+      self.systematic_error = helper_functions.gauss(
+        0, self.p['systematic_sigma'])
+    else:
+      self.systematic_error = helper_functions.gauss(
+        Q(0, 'm**3/s'), self.p['systematic_sigma'])
+    
+  def read_value(self, env, cells):
+    value = env['recirc_rate']
+    random_error = helper_functions.gauss(1, self.p['random_CV'])
+    return {'recirc_rate':random_error * (value + self.systematic_error)}
+  
+class levitronix_RPM_meter:
+  """Measures RPM of levitronix pump."""
+  p = param.instrumentation['levitronix_RPM']
+  def __init__(self):
+    if param.skip_units:
+      self.systematic_error = helper_functions.gauss(
+        0, self.p['systematic_sigma'])
+    else:
+      self.systematic_error = helper_functions.gauss(
+        Q(0, '1/s'), self.p['systematic_sigma'])
+    
+  def read_value(self, env, cells):
+    value = env['recirc_RPM']
+    random_error = helper_functions.gauss(1, self.p['random_CV'])
+    return {'recirc_RPM':random_error * (value + self.systematic_error)}
+  
+    
   
 class wrapper:
   """Main class that performs all the assays."""
   def __init__(self, start_time, osmo, BGA_instance, cell_counter,  bioHT=None,
                bioHT_list=None, pH = True, O2 = True, temp = True,
-               use_scale = True, ):
+               use_scale = True, recirc_flowmeter = False, levitronix_RPM = False):
     """Experimental_setup should take the form of:
       BGA: instance of BGA to calibrate against
       bioHT: instance of bioHT
@@ -263,6 +293,9 @@ class wrapper:
       pH: bool
       O2: bool
       temp: bool
+      use_scale: bool
+      recirc_flowmeter: bool
+      levitronix_RPM: bool
       )
     """
     self.online_assays = []
@@ -277,6 +310,8 @@ class wrapper:
     if O2: self.online_assays.append(O2_probe(start_time, BGA_instance).read_value)
     if temp: self.online_assays.append(temperature_probe().read_value)
     if use_scale: self.online_assays.append(scale().read_value)
+    if recirc_flowmeter: self.online_assays.append(flowmeter().read_value)
+    if levitronix_RPM: self.online_assays.append(levitronix_RPM_meter().read_value)
     
   def step(self, environment, cells, offline):
     """Takes state of cells and environment and outputs assays.  
@@ -289,8 +324,23 @@ class wrapper:
     for assay in self.online_assays:
       results.update(assay(environment, cells))
     if offline:
+      if 'permeate_molarity' in environment:
+        # perfusion mode
+        permeate = {}
+        mixture = environment['permeate_molarity']
+        mixture['pH'] = environment['pH']
+        mixture['volume'] = environment['volume']
+        for assay in self.offline_assays:
+          if not type(assay) == type(cell_counter):
+            permeate.update(assay(mixture, cells))
+        results['permeate'] = permeate
+      br = {}
+      mixture = environment['br_molarity']
+      mixture['pH'] = environment['pH']
+      mixture['volume'] = environment['volume']
       for assay in self.offline_assays:
-        results.update(assay(environment, cells))
+        br.update(assay(mixture, cells))
+      results['bioreactor'] = br
     return results
 
 

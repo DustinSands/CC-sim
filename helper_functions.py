@@ -38,6 +38,9 @@ def create_media(target_molarity):
       component = ['Na', 'Cl']
     elif component == 'KCl':
       component = ['K', 'Cl']
+    elif component == 'mOsm':
+      #mOsm isn't a component; skip it
+      continue
     else: component = [component]
     
     error_ratio = gauss(1, param.actuation['mixtures']['component_CV'])
@@ -81,6 +84,7 @@ def simplify(entity):
     entity = entity.simplified
   return entity
 
+#Units of these variables, in SI units
 base_unit_lookup = {
   'VCD':'ce/m**3',
   'cell_diameter':'m',
@@ -91,17 +95,28 @@ base_unit_lookup = {
   'IGG': 'kg/m**3', 
   'viability':'dimensionless',
   'glucose addition rate':'kg/s',
-  'glucose feed rate':'m**3/s',
+  'glucose feed sp':'m**3/s',
   'mOsm addition rate':'mol/s',
-  'mOsm feed rate':'m**3/s',
+  'mOsm feed sp':'m**3/s',
   'air':'m**3/s',
   'CO2':'m**3/s',
   'O2':'m**3/s',
   'target_diameter':'m',
   'rVCD':'ce/m**3',
   'total_cell_volume':'m**3',
+  'recirc_rate':'m**3/s',
+  'recirc_RPM':'1/s',
+  'VVD':'1/s',
+  'permeate rate':'m**3/s',
+  'topoff':'m**3/s',
+  'fiber_shear':'1/s',
+  'rglucose':'mol/m**3',
+  'amino_acids':'mol/m**3',
+  'sieving':'',
+  'rperfusion':'m**3/s',
   }
 
+#Units that we actually view them at (for rescaling)
 rescale_unit_lookup = {
   'VCD':q.CD,
   'cell_size':'um',
@@ -113,15 +128,25 @@ rescale_unit_lookup = {
   'cell_diameter': 'um',
   'viability':'percent',
   'glucose addition rate':'g/h',
-  'glucose feed rate':'ml/h',
+  'glucose feed sp':'ml/h',
   'mOsm addition rate':'mmol/h',
-  'mOsm feed rate':'ml/h',
+  'mOsm feed sp':'ml/h',
   'air':'ml/min',
   'CO2':'ml/min',
   'O2':'ml/min',
   'target_diameter':'um',
   'rVCD':'e5c/ml',
   'total_cell_volume':'L',
+  'recirc_rate':'L/min',
+  'recirc_RPM':'1/min',
+  'VVD':'1/d',
+  'permeate rate':'ml/min',
+  'topoff':'ml/min',
+  'fiber_shear':'1/s',
+  'rglucose':'mM',
+  'amino_acids':'mM',
+  'sieving':'%',
+  'rperfusion':'ml/min',
   }
 
 timer = {}
@@ -171,14 +196,16 @@ def print_times():
   """Helper function to print how long the agent has spent doing various tasks.
   Resets all timers at end. """
   percent = {}
-  for name in timer_list:
+  for name in timer:
     percent[name] = round(timer[name].total / timer['total'].total *100,1)
   print(f'Total time:{timer["total"].total}')
   print(f'Env:{percent["env"]}%')
+  print(f'-Rootfinding:{percent["root"]}%')
   print(f'Cells:{percent["cells"]}%')
   print(f'Control, Actuation:{percent["con"]}%')
   print(f'Assays:{percent["assays"]}%')
-  for name in timer_list:
+  print(f'Metrics:{percent["metrics"]}%')
+  for name in timer:
     timer[name].reset()
 
 def get_plotfunc(ax, param):
@@ -186,8 +213,9 @@ def get_plotfunc(ax, param):
   
   Also adds markers for offline variables.
   """
-  steps = ['glucose addition rate', 'glucose feed rate', 'mOsm feed rate', 
-           'mOsm addition rate', 'Concentrated Feed']
+  steps = ['glucose addition rate', 'glucose feed sp', 'mOsm feed sp', 
+           'mOsm addition rate', 'Concentrated Feed', 'VVD', 'permeate rate',
+           ]
   offline = ['IGG', 'VCD', 'glucose', 'mOsm', 'viability', 'cell_diameter']
   if param in steps:
     func = lambda x, y, **kwargs: ax.step(x, y, where='post', **kwargs)
@@ -199,15 +227,20 @@ def get_plotfunc(ax, param):
 
 def scale_units(assays):
   """Adds units and rescales for human interaction / visualization."""
-  assays = assays.copy()
-  for key in assays:
-    if param.skip_units:
-      if key in base_unit_lookup:
-        units = base_unit_lookup[key]
-        assays[key] = Q(assays[key], units)
-    if key in rescale_unit_lookup:
-      assays[key] = assays[key].rescale(rescale_unit_lookup[key])
-  return assays
+  if type(assays) == list:
+    for entry in assays:
+      entry = scale_units(entry)
+  else:
+    for key in assays:
+      if type(assays[key]) == dict:
+        scale_units(assays[key])
+      else:
+        if param.skip_units:
+          if key in base_unit_lookup:
+            units = base_unit_lookup[key]
+            assays[key] = Q(assays[key], units)
+        if key in rescale_unit_lookup:
+          assays[key] = assays[key].rescale(rescale_unit_lookup[key])
   
 
   

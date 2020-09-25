@@ -15,7 +15,7 @@ import pdb
 from quantities import Quantity as Q
 import numpy as np
 
-import tests, param, main, helper_functions
+import param, helper_functions
 
 """These are NOT intended to exactly emulate real cells.  Parameters are 
 intended to roughly represent how cells might behave, as well as provide
@@ -28,8 +28,8 @@ global_cell_line_mean_parameters = \
     'mOsm':Q(340, 'mol/m**3'),
     'mOsm_tolerance':Q(60, 'mol/m**3'),
     'production_efficiency':1,
-    'shear_tolerance' : Q(3500, '1/s'),
-    'shear_sensitivity':Q(0.001, 's'),
+    'shear_tolerance' : Q(3000, '1/s'),
+    'shear_sensitivity':Q(0.002, 's'),
     'shear_requirement':Q(300, '1/s'),
     'temperature':36,
     'temperature_tolerance':3,
@@ -38,13 +38,17 @@ global_cell_line_mean_parameters = \
     'pH': 7.05,
     'pH_tolerance':0.2,
     'metabolism_rate':1,
+    'component_B_density':Q(0.01, 'mM'),
+    'component_B_passive_release': Q(1e-18, 'mol/ce/day'),
     'LDH_density':1,  #scale unknown
     'death_delay': 32, #hours
     'delayed_death_transition': np.timedelta64(4, 'h'), 
     'growth_diameter': Q(14, 'um'),
     'production_diameter_increase': Q(5, 'um'),
-    'component_A_sensitivity':Q(5e5, '1/M'),
-    'component_A_tolerance':Q(1e-6, 'M'),
+    # 'component_A_sensitivity':Q(5e5, '1/M'),
+    # 'component_A_tolerance':Q(1.e-6, 'M'),
+    'component_A_sensitivity':Q(1.e6, '1/M'),
+    'component_A_tolerance':Q(1.5e-6, 'M'),
     'component_B_sensitivity':Q(4e7, '1/M'),
     'component_B_tolerance':Q(1e-7, 'M'),
     'component_C_sensitivity':Q(0.03, '1/mM'),
@@ -63,8 +67,8 @@ global_cell_line_STD_parameters = \
     'mOsm':Q(15, 'mol/m**3'),
     'mOsm_tolerance':Q(20, 'mol/m**3'),
     'production_efficiency':0.1,
-    'shear_tolerance':Q(500, '1/s'),
-    'shear_sensitivity':Q(0.0005, 's'),
+    'shear_tolerance':Q(300, '1/s'),
+    'shear_sensitivity':Q(0.0003, 's'),
     'shear_requirement':Q(100, '1/s'),
     'temperature':1,
     'temperature_tolerance':0.7,
@@ -73,13 +77,15 @@ global_cell_line_STD_parameters = \
     'pH': 0.05,
     'pH_tolerance':0.05,
     'metabolism_rate':0.2,
-    'LDH_density':0.2,
+    'component_B_density':Q(0.002, 'mM'),
+    'component_B_passive_release': Q(1e-19, 'mol/ce/day'),
+    'LDH_density':0.1,
     'death_delay': 6,
     'delayed_death_transition': np.timedelta64(60, 'm'),
     'growth_diameter': Q(1, 'um'),
     'production_diameter_increase': Q(2, 'um'),
-    'component_A_sensitivity':Q(2e5, '1/M'),
-    'component_A_tolerance':Q(5e-7, 'M'),
+    'component_A_sensitivity':Q(1.5e5, '1/M'),
+    'component_A_tolerance':Q(3e-7, 'M'),
     'component_B_sensitivity':Q(5e6, '1/M'),
     'component_B_tolerance':Q(1e-8, 'M'),
     'component_C_sensitivity':Q(0.01, '1/mM'),
@@ -137,6 +143,7 @@ class cell_wrapper:
     self.dying_cells = Q(0., 'ce')
     self.dead_cells = 0.03*self.viable_cells
     self.one_cell = Q(1, 'ce')
+    self.component_B_release = Q(0, 'g')
     
     
     if param.skip_units:
@@ -144,6 +151,7 @@ class cell_wrapper:
       self.dying_cells = 0
       self.dead_cells = 0
       self.one_cell = 1
+      self.component_B_release = 0
       
     self.diameter = self.cp['growth_diameter']
     self.volume = math.pi/6*self.diameter**3
@@ -165,10 +173,10 @@ class cell_wrapper:
     """
     sensitivity = self.cp['component_A_sensitivity']
     tolerance = self.cp['component_A_tolerance']
-    comp_A_inhibition = 1/(1+math.exp(-sensitivity*(env['component_A']-
+    comp_A_inhibition = 1/(1+math.exp(-sensitivity*(env['br_molarity']['component_A']-
                                                          tolerance-3/sensitivity)))
     osmo_inhibition = 1/(1+math.exp(-1/self.cp['growth_osmo_range']*\
-      (env['mOsm']-self.cp['growth_osmo']-3*self.cp['growth_osmo_range'])))
+      (env['br_molarity']['mOsm']-self.cp['growth_osmo']-3*self.cp['growth_osmo_range'])))
     self.total_inhibition = comp_A_inhibition + osmo_inhibition - \
       comp_A_inhibition * osmo_inhibition
 
@@ -205,16 +213,18 @@ class cell_wrapper:
       if param.skip_units: self.dying_cells += self.delayed_death_buckets[-1]
       else: self.dying_cells += Q(self.delayed_death_buckets[-1], 'ce')
       self.delayed_death_buckets = [0]+self.delayed_death_buckets[:-1]
-      # print(f'Swapped!  {len(self.delayed_death_buckets)}{self.delayed_death_buckets}')
     extinction_rate = 0
-    # If environmental variables are out of bounds, the cells start to die
-    for condition in ['mOsm', 'temperature', 'dO2', 'pH']:
+      
+    for condition in ['temperature', 'pH', 'mOsm', 'dO2']:
       tolerance = condition + '_tolerance'
-      # diff = max(0, abs(env[condition]-self.cp[condition])-self.cp[tolerance])
-      diff = abs(env[condition]-self.cp[condition])
+      try:
+        diff = abs(env[condition]-self.cp[condition])
+      except KeyError:
+        diff = abs(env['br_molarity'][condition]-self.cp[condition])
       extinction_rate += (math.exp(0.095*diff/self.cp[tolerance])-1)
-      # print(condition, diff/self.cp[tolerance], env[condition], self.cp[condition])
+      
     extinction_rate +=math.exp((1.6-limiting_ratio*1.6)**2)-1
+    #Store extinction rate (per day) for metrics
     self.extinction_rate = extinction_rate
     #Convert extinction rate from per day to per step
     extinction_rate /= self.extinction_conversion/metabolism_rate
@@ -228,6 +238,29 @@ class cell_wrapper:
     self.dead_cells  += self.dying_cells * self.death_transition_ratio
     self.dying_cells *= 1-self.death_transition_ratio
     
+    #Shear destroys all cells, not just living
+    sensitivity = self.cp['shear_sensitivity']
+    tolerance = self.cp['shear_tolerance']
+    shear_level = 1/(1+math.exp(-sensitivity*(env['max_shear']-1/sensitivity*3-tolerance)))
+    shear_ratio = 1- shear_level/self.extinction_conversion
+    sheared_cells = (1-shear_ratio) * (self.viable_cells + \
+                                       self.dying_cells + \
+                                       sum(self.delayed_death_buckets)*self.one_cell+\
+                                       self.dead_cells)
+    self.viable_cells *= shear_ratio
+    self.dying_cells *= shear_ratio
+    self.dead_cells *= shear_ratio
+    #dead cells are sheared at twice the rate
+    sheared_cells += (1-shear_ratio)*self.dead_cells
+    self.dead_cells *= shear_ratio
+    #Tracking / analytics
+    self.shear_ratio = shear_ratio
+    
+    for index in range(len(self.delayed_death_buckets)):
+      self.delayed_death_buckets[index] *= shear_ratio
+    #comp B is released both passively and when cells are sheared
+    self.component_B_release = sheared_cells * self.volume /self.one_cell/param.step_size* \
+      self.cp['component_B_density']+self.viable_cells*self.cp['component_B_passive_release']
     self.delayed_death_buckets[0] += float((1-instant_death_ratio)*extinction_rate*self.viable_cells/Q(1, 'ce'))
     self.dead_cells += instant_death_ratio*extinction_rate*self.viable_cells
     self.viable_cells -= instant_death_ratio*extinction_rate*self.viable_cells+\
@@ -296,25 +329,30 @@ class cell_wrapper:
     0 = in range
     1 = out of range
     """
-    for variable in ['component_A', 'component_B', 'component_C', 'component_D', 
-                     'shear']:
-      sensitivity = self.cp[variable+'_sensitivity']
+    for variable in ['pH', 'dO2', 'mOsm', 'temperature', 'component_A', 
+                      'component_B', 'component_C', 'component_D', 
+                      'shear']:
+      try:
+        value = env[variable]
+      except KeyError:
+        value = env['br_molarity'][variable]
       tolerance = self.cp[variable+'_tolerance']
-      # print('CE', variable, env[variable], sensitivity, tolerance)
-      self.out_of_range[variable] = 1/(1+math.exp(
-        -sensitivity*(env[variable]-1/sensitivity*3-tolerance)))
-    for variable in ['pH', 'dO2', 'mOsm', 'temperature']:
-      tolerance = self.cp[variable+'_tolerance']
-      # print('CE', variable, env[variable], self.cp[variable], tolerance)
-      self.out_of_range[variable] = 1-1/\
-        math.exp((abs(env[variable]-self.cp[variable])/tolerance)**2)
+      try:
+        sensitivity = self.cp[variable+'_sensitivity']
+        self.out_of_range[variable] = 1/(1+math.exp(
+          -sensitivity*(value-1/sensitivity*3-tolerance)))
+      except KeyError:
+        #no sensitivity
+        self.out_of_range[variable] = 1-1/\
+          math.exp((abs(value-self.cp[variable])/tolerance)**2)
+          
   
   def IGG_ratios(self, production_rate):
     
-    acidic_fraction = self.out_of_range['component_C']*-0.1+self.out_of_range['shear']*0.1+\
-      self.out_of_range['pH']*0.4
-    basic_fraction = self.out_of_range['component_B']*0.25+self.out_of_range['dO2']*0.5+\
-      self.out_of_range['temperature']*-0.1
+    acidic_fraction = self.out_of_range['component_C']*0.1+self.out_of_range['shear']*0.1+\
+      self.out_of_range['pH']*0.3
+    basic_fraction = self.out_of_range['component_B']*0.05+self.out_of_range['dO2']*0.25+\
+      self.out_of_range['temperature']*0.1
       
     IGG_production = {}
     IGG_production['IGG_a'] = acidic_fraction * production_rate 
@@ -338,16 +376,21 @@ class cell_wrapper:
     cells['total_cells'] = living_cells+self.dead_cells
     cells['diameter'] = self.diameter
     cells['volume'] = self.volume
+    cells['dry_weight'] = (living_cells + self.dead_cells) * self.volume * \
+      self.p['dry_density']/self.one_cell
     cheater_metrics['target_diameter'] = self.target_diameter #Cheater metric
     cheater_metrics['growth_inhibition'] = self.total_inhibition #Cheater metric
     cheater_metrics['extinction_rate'] = self.extinction_rate
+    cheater_metrics['living_cells'] = living_cells
+    cheater_metrics['total_cells'] = living_cells + self.dead_cells
+    cheater_metrics['viable_cells'] = self.viable_cells
+    cheater_metrics['shear_ratio'] = self.shear_ratio
     
     
-    #Limiting Cell Growth Mechanic
+    #Limiting Cell Growth Mechanic, Sieving
     cells['mass_transfer']['component_A'] = -self.viable_cells * self.p['component_A_production_rate']
-    
+    cells['mass_transfer']['component_B'] = -self.component_B_release
     return cells, cheater_metrics
   
 if __name__ == '__main__':
-  main.run_sim()
   tests.cell_tests()

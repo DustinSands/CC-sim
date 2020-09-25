@@ -7,23 +7,23 @@ increase process understanding.
 For more information, visit: https://portfolio.dustinsands.com/cc-sim/
 
 Currently implemented:
-  Various assays, all with their own forms of error (systematic, drift, random)
-    and calibration schemes
-  Modular control strategies and actuation devices
-  pH calc from bicarb buffer equations (no weak acids / bases yet) 
-  Customizable bioreactor setup
-  Macroscopic CHO cell model
-    Randomly generated cell lines with 30+ varying parameters
-    Metabolism with limiting reactants
-    Includes PQ data (correlated (incorrectly) to environmental conditions)
-    Delayed death
-    Size changes depending on phase of growth / environmental conditions
-    Glucose, O2, and AA (lumped) consumption reflect real data
-  Units to safeguard whether implementation is correct
-  Compartamentalized simulation and observation data to keep controls from using
-    real instead of observed data
-  Randomized sample times, mixture errors, assay errors, cell parameters, etc.
-  Visualization / Plotting Functions
+-Various assays, all with their own forms of error (systematic, drift, random)
+  and calibration schemes
+-Modular control strategies and actuation devices
+-pH calc from bicarb buffer equations (no weak acids / bases yet) 
+-Customizable bioreactor setup
+-Macroscopic CHO cell model
+ -Randomly generated cell lines with 30+ varying parameters
+ -Metabolism with limiting reactants
+ -Includes PQ data (correlated (incorrectly) to environmental conditions)
+ -Delayed death
+ -Size changes depending on phase of growth / environmental conditions
+ -Glucose, O2, and AA (lumped) consumption reflect real data
+-Units to safeguard whether implementation is correct
+-Compartamentalized simulation and observation data to keep controls from using
+  real instead of observed data
+-Randomized sample times, mixture errors, assay errors, cell parameters, etc.
+-Visualization / Plotting Functions
 
   
 To run:
