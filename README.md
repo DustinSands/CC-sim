@@ -12,6 +12,7 @@ Currently implemented:
  - Modular control strategies and actuation devices
  - pH calc from bicarb buffer equations (no weak acids / bases yet) 
  - Customizable bioreactor setup
+   - Batch, Fed-Batch, or Perfusion
  - Macroscopic CHO cell model
    - Randomly generated cell lines with 30+ varying parameters
    - Metabolism with limiting reactants
