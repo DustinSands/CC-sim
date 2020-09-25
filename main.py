@@ -238,7 +238,7 @@ def run_seed_density_comparison():
 
 def run_perfusion():
   """Creates a perfusion configuration and runs it, then plots a couple results."""
-  config = create_perfusion_config(3, glucose_sp = Q(3, 'g/L'))
+  config = create_perfusion_config(1, glucose_sp = Q(3, 'g/L'))
   metrics = run_experiments(config)
   analyze(metrics)
 
